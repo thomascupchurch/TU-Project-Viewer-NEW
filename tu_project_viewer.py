@@ -12,7 +12,7 @@ from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QPixmap
 import fitz  # PyMuPDF
 
-# Stub for GanttChartWidget to fix NameError. Replace with actual implementation as needed.
+# Gantt chart widget
 class GanttChartWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -103,9 +103,19 @@ class PDFViewer(QWidget):
         self.page_label.setText(f"Page {self.page_num+1} / {self.page_count}")
         self.jump_input.setMaximum(self.page_count)
         self.jump_input.setValue(self.page_num+1)
-    def jump_to_page(self):
-        # Stub method to avoid AttributeError. Implement actual logic if needed.
-        pass
+    def jump_to_page(self, value=None):
+        # Navigate to the given 1-based page number (value from QSpinBox) or read spinbox
+        try:
+            if value is None:
+                value = self.jump_input.value()
+            v = int(value)
+        except Exception:
+            return
+        if hasattr(self, 'page_count') and self.page_count:
+            v = max(1, min(self.page_count, v))
+        self.page_num = max(0, v - 1)
+        self.show_page()
+        self.update_nav()
     def __init__(self):
         super().__init__()
         self.layout = QVBoxLayout()
@@ -115,14 +125,40 @@ class PDFViewer(QWidget):
         self.layout.addWidget(self.label)
         self.nav_layout = QHBoxLayout()
         self.prev_btn = QPushButton('Previous')
+        self.prev_btn.clicked.connect(lambda: self.prev_page())
         self.next_btn = QPushButton('Next')
+        self.next_btn.clicked.connect(lambda: self.next_page())
         self.page_label = QLabel('')
         self.jump_input = QSpinBox()
         self.jump_input.setMinimum(1)
         self.jump_input.setMaximum(1)
         self.jump_input.setPrefix('Go to: ')
         self.jump_input.setFixedWidth(100)
-        self.jump_input.valueChanged.connect(self.jump_to_page)
+        # valueChanged will pass the new value; wrap to call our handler
+        self.jump_input.valueChanged.connect(lambda v: self.jump_to_page(v))
+        # Build nav layout
+        self.nav_layout.addWidget(self.prev_btn)
+        self.nav_layout.addWidget(self.next_btn)
+        self.nav_layout.addStretch(1)
+        self.nav_layout.addWidget(self.page_label)
+        self.nav_layout.addWidget(self.jump_input)
+        self.layout.addLayout(self.nav_layout)
+
+    def prev_page(self):
+        if not hasattr(self, 'doc') or not self.doc:
+            return
+        if self.page_num > 0:
+            self.page_num -= 1
+            self.show_page()
+            self.update_nav()
+
+    def next_page(self):
+        if not hasattr(self, 'doc') or not self.doc:
+            return
+        if self.page_num < self.page_count - 1:
+            self.page_num += 1
+            self.show_page()
+            self.update_nav()
 
 # ...existing code...
 
