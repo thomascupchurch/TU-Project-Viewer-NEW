@@ -2,7 +2,7 @@
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, QLabel, QSplitter, QInputDialog, QDateEdit, QSpinBox
+    QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, QLabel, QSplitter, QInputDialog, QDateEdit, QSpinBox, QAbstractItemView
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
@@ -195,7 +195,10 @@ class ProjectViewer(QMainWindow):
         right_layout.addWidget(plan_label)
         self.task_tree = QTreeWidget()
         self.task_tree.setHeaderLabels(self.TASK_COLS)
+        # Allow inline editing and update chart when items change
+        self.task_tree.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked | QAbstractItemView.EditKeyPressed)
         self.task_tree.itemDoubleClicked.connect(self.edit_task)
+        self.task_tree.itemChanged.connect(self.on_item_changed)
         self.task_tree.itemClicked.connect(self.on_task_clicked)
         self.task_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.task_tree.customContextMenuRequested.connect(self.open_context_menu)
@@ -358,10 +361,15 @@ class ProjectViewer(QMainWindow):
         if selected and selected[0].parent() is None:
             parent = selected[0]
             item = QTreeWidgetItem(values)
+            # Make item editable
+            for i in range(len(values)):
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
             parent.addChild(item)
             parent.setExpanded(True)
         else:
             item = QTreeWidgetItem(values)
+            for i in range(len(values)):
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
             self.task_tree.addTopLevelItem(item)
         self.update_gantt_chart()
 
@@ -468,11 +476,18 @@ class ProjectViewer(QMainWindow):
             if len(values) < len(self.TASK_COLS):
                 values += [""] * (len(self.TASK_COLS) - len(values))
             item = QTreeWidgetItem(values)
+            # Make deserialized items editable
+            for i in range(len(values)):
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
             if isinstance(parent, QTreeWidget):
                 parent.addTopLevelItem(item)
             else:
                 parent.addChild(item)
             self.deserialize_tree(entry.get('children', []), item)
+
+    def on_item_changed(self, item, column):
+        # Called when an item is edited inline; update Gantt chart to reflect changes
+        self.update_gantt_chart()
 
     def clear_tree(self):
         self.task_tree.clear()
