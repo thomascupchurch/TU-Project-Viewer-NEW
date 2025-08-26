@@ -100,11 +100,11 @@ class GanttChartWidget(QWidget):
         # Parse depth from name indentation
         def get_depth(name):
             return (len(name) - len(name.lstrip())) // 4
-    names = [t['name'] for t in tasks]
-    name_to_idx = {name: i for i, name in enumerate(names)}
-    starts = [mdates.date2num(t['start']) for t in tasks]
-    durations = [t['duration'] for t in tasks]
-    y_pos = list(range(len(tasks)))
+        names = [t['name'] for t in tasks]
+        name_to_idx = {name: i for i, name in enumerate(names)}
+        starts = [mdates.date2num(t['start']) for t in tasks]
+        durations = [t['duration'] for t in tasks]
+        y_pos = list(range(len(tasks)))
         # Color by depth: top-level = UT orange, subtasks = lighter orange
         colors = []
         for t in tasks:
@@ -159,6 +159,7 @@ class GanttChartWidget(QWidget):
         print('names:', names)
         print('y_pos:', y_pos)
         # Draw bars, highlight critical path if available
+        cp_indices = []
         for i in range(len(names)):
             start = starts[i]
             dur = durations[i]
@@ -167,12 +168,22 @@ class GanttChartWidget(QWidget):
             try:
                 if name in critical_path:
                     self.ax.barh(i, dur, left=start, height=0.4, align='center', color=color, edgecolor='red', linewidth=3, zorder=3)
+                    cp_indices.append(i)
                 else:
                     self.ax.barh(i, dur, left=start, height=0.4, align='center', color=color, edgecolor='black', zorder=2)
             except Exception as e:
                 print(f'Bar plot error for {name}:', e)
                 # Fallback: plot without critical path
                 self.ax.barh(i, dur, left=start, height=0.4, align='center', color=color, edgecolor='black', zorder=2)
+        # Draw a red line connecting the centers of the bars on the critical path
+        if len(cp_indices) > 1:
+            cp_x = []
+            cp_y = []
+            for idx in cp_indices:
+                # Center of the bar: start + dur/2, y = idx
+                cp_x.append(starts[idx] + durations[idx]/2)
+                cp_y.append(idx)
+            self.ax.plot(cp_x, cp_y, color='red', linewidth=2.5, marker='o', zorder=4, label='Critical Path')
         self.ax.set_yticks(y_pos)
         self.ax.set_yticklabels(names)
         self.ax.set_xlabel('Date')
@@ -435,12 +446,20 @@ class ProjectViewer(QMainWindow):
         self.save_project_btn = QPushButton('Save Project')
         self.save_project_btn.clicked.connect(self.save_project)
         btn_layout.addWidget(self.save_project_btn)
+
         self.load_project_btn = QPushButton('Load Project')
         self.load_project_btn.clicked.connect(self.load_project)
         btn_layout.addWidget(self.load_project_btn)
         self.export_gantt_btn = QPushButton('Export Gantt Chart')
         self.export_gantt_btn.clicked.connect(lambda: self.gantt_chart.export_chart(self))
         btn_layout.addWidget(self.export_gantt_btn)
+
+        # Add Deselect Task button
+        self.deselect_task_btn = QPushButton('Deselect Task')
+        self.deselect_task_btn.setToolTip('Clear selection so new tasks are top-level')
+        self.deselect_task_btn.clicked.connect(self.deselect_task)
+        btn_layout.addWidget(self.deselect_task_btn)
+
         btn_layout.addStretch(1)
         right_layout.addLayout(btn_layout)
 
@@ -457,9 +476,15 @@ class ProjectViewer(QMainWindow):
 
         # Set initial splitter sizes for a balanced look
         self.splitter.setSizes([500, 700])
-        main_layout.addWidget(self.splitter)
+        # Ensure splitter expands to fill available space
+        self.splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        main_layout.addWidget(self.splitter, stretch=1)
+        main_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setCentralWidget(main_widget)
         self.resize(1200, 800)
+
+    def deselect_task(self):
+        self.task_tree.clearSelection()
 
     def remove_task(self):
         sel = self.task_tree.selectedItems()
