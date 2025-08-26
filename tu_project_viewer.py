@@ -1,4 +1,3 @@
-print('tu_project_viewer.py: file loaded')
 from PyQt5.QtWidgets import QStyledItemDelegate, QDateEdit
 
 # Delegate for Start Date column
