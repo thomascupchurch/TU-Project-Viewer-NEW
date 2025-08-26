@@ -133,6 +133,9 @@ class PDFViewer(QWidget):
         super().__init__()
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
+        self.file_label = QLabel('No PDF loaded')
+        self.file_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.file_label)
         self.label = PDFLabel(self)
         self.label.setText('No PDF loaded')
         self.label.setAlignment(Qt.AlignCenter)
@@ -157,8 +160,9 @@ class PDFViewer(QWidget):
         self.nav_layout.addWidget(self.page_label)
         self.nav_layout.addWidget(self.jump_input)
         self.layout.addLayout(self.nav_layout)
-        self.layout.setStretch(0, 1)  # Make the label take all available space
-        self.layout.setStretch(1, 0)  # Navigation bar does not expand
+        self.layout.setStretch(0, 0)  # File label does not expand
+        self.layout.setStretch(1, 1)  # PDF label takes all available space
+        self.layout.setStretch(2, 0)  # Navigation bar does not expand
 
         self.doc = None
         self.page_count = 0
@@ -166,15 +170,18 @@ class PDFViewer(QWidget):
         self.pdf_path = ''
 
     def load_pdf(self, path):
+        import os
         try:
             self.doc = fitz.open(path)
             self.page_count = self.doc.page_count
             self.page_num = 0
             self.pdf_path = path
+            self.file_label.setText(os.path.basename(path))
             self.show_page()
             self.update_nav()
         except Exception as e:
             self.label.setText(f"Failed to load PDF: {e}")
+            self.file_label.setText('No PDF loaded')
 
     def show_page(self):
         if not self.doc:
@@ -356,7 +363,8 @@ class ProjectViewer(QMainWindow):
         self.setCentralWidget(container)
     def __init__(self):
         super().__init__()
-        self.project_file_label = QLabel('')
+        self.CONFIG_PATH = 'last_project_path.txt'
+        self.project_file_label = QLabel('Project File: (none loaded)')
         self.setup_ui()
 
     def delete_task(self):
@@ -518,6 +526,7 @@ class ProjectViewer(QMainWindow):
             return None
 
     def save_project(self):
+        import os
         path, _ = QFileDialog.getSaveFileName(self, 'Save Project', '', 'Project Files (*.json)')
         if not path:
             return
@@ -525,10 +534,12 @@ class ProjectViewer(QMainWindow):
         try:
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
+            self.project_file_label.setText(f'Project File: {os.path.basename(path)}')
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to save project: {e}')
 
     def load_project(self, path=None):
+        import os
         if not path:
             path, _ = QFileDialog.getOpenFileName(self, 'Load Project', '', 'Project Files (*.json)')
         if not path:
@@ -544,6 +555,7 @@ class ProjectViewer(QMainWindow):
             self.deserialize_tree(data.get('tasks', []), self.task_tree)
             self.update_gantt_chart()
             self.save_last_project_path(path)
+            self.project_file_label.setText(f'Project File: {os.path.basename(path)}')
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to load project: {e}')
 
