@@ -58,27 +58,52 @@ class GanttChartWidget(QWidget):
         if not tasks:
             self.canvas.draw()
             return
-        tasks_sorted = sorted(tasks, key=lambda t: t['start'])
-        names = [t['name'] for t in tasks_sorted]
-        starts = [mdates.date2num(t['start']) for t in tasks_sorted]
-        durations = [t['duration'] for t in tasks_sorted]
-        y_pos = list(range(len(tasks_sorted)))
-        # Official University of Tennessee orange: #FF8200
-        self.ax.barh(y_pos, durations, left=starts, height=0.4, align='center', color='#FF8200', edgecolor='black')
+        # Parse depth from name indentation
+        def get_depth(name):
+            return (len(name) - len(name.lstrip())) // 4
+        names = [t['name'] for t in tasks]
+        starts = [mdates.date2num(t['start']) for t in tasks]
+        durations = [t['duration'] for t in tasks]
+        y_pos = list(range(len(tasks)))
+        # Color by depth: top-level = UT orange, subtasks = lighter orange
+        colors = []
+        for t in tasks:
+            depth = get_depth(t['name'])
+            if depth == 0:
+                colors.append('#FF8200')
+            elif depth == 1:
+                colors.append('#FFB366')  # lighter orange
+            else:
+                colors.append('#FFE0B2')  # even lighter
+        self.ax.barh(y_pos, durations, left=starts, height=0.4, align='center', color=colors, edgecolor='black')
         self.ax.set_yticks(y_pos)
         self.ax.set_yticklabels(names)
         self.ax.set_xlabel('Date')
         self.ax.xaxis.set_major_locator(mdates.AutoDateLocator())
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
         self.figure.autofmt_xdate()
-        name_to_idx = {t['name']: i for i, t in enumerate(tasks_sorted)}
-        for i, t in enumerate(tasks_sorted):
+        # Draw dependency arrows as before
+        name_to_idx = {t['name']: i for i, t in enumerate(tasks)}
+        for i, t in enumerate(tasks):
             dep = t.get('depends_on', '')
             if dep and dep in name_to_idx:
                 dep_idx = name_to_idx[dep]
-                dep_task = tasks_sorted[dep_idx]
+                dep_task = tasks[dep_idx]
                 dep_end = mdates.date2num(dep_task['start'] + timedelta(days=dep_task['duration']))
                 self.ax.annotate('', xy=(starts[i], i), xytext=(dep_end, dep_idx), arrowprops=dict(arrowstyle='->', color='red', lw=1.2))
+        # Draw vertical lines from parent to subtasks
+        parent_stack = []  # (y, depth, x)
+        for i, t in enumerate(tasks):
+            depth = get_depth(t['name'])
+            # Remove stack entries deeper or at same level
+            while parent_stack and parent_stack[-1][1] >= depth:
+                parent_stack.pop()
+            if parent_stack:
+                parent_y, parent_depth, parent_x = parent_stack[-1]
+                # Draw vertical line at the left edge of the subtask bar
+                x = starts[i]
+                self.ax.plot([x, x], [parent_y, i], color='#888', lw=1.5, linestyle='--', zorder=0)
+            parent_stack.append((i, depth, starts[i]))
         self.ax.grid(True, axis='x', linestyle='--', alpha=0.6)
         self.canvas.draw()
 
@@ -223,7 +248,7 @@ class PDFViewer(QWidget):
             self.update_nav()
 
 class ProjectViewer(QMainWindow):
-    TASK_COLS = ['Task', 'Start Date', 'Duration (days)', 'PDF Page', 'Depends On']
+    TASK_COLS = ['Task', 'Start Date', 'Duration (days)', 'PDF Page', 'Depends On', 'Notes']
     # ...existing code...
     def eventFilter(self, obj, event):
         from PyQt5.QtCore import QEvent
@@ -381,12 +406,15 @@ class ProjectViewer(QMainWindow):
             dep_item, ok = QInputDialog.getItem(self, 'Depends On', 'Depends on (optional):', ['None'] + names, 0, False)
             if ok and dep_item and dep_item != 'None':
                 dep = dep_item
-        vals = [name, date_str, str(duration), str(pdf_page) if pdf_page>0 else '', dep]
+        notes, ok = QInputDialog.getText(self, 'Add Task', 'Notes (optional):')
+        if not ok:
+            notes = ''
+        vals = [name, date_str, str(duration), str(pdf_page) if pdf_page>0 else '', dep, notes]
         sel = self.task_tree.selectedItems()
         item = QTreeWidgetItem(vals)
         for i in range(len(vals)):
             item.setFlags(item.flags() | Qt.ItemIsEditable)
-        if sel and sel[0].parent() is None:
+        if sel:
             sel[0].addChild(item)
         else:
             self.task_tree.addTopLevelItem(item)
@@ -415,34 +443,25 @@ class ProjectViewer(QMainWindow):
         return names
 
     def update_gantt_chart(self):
-        def collect(item, tasks):
-            for i in range(item.childCount()):
-                collect(item.child(i), tasks)
-                # Create the splitter and panels as before
-                self.splitter = QSplitter()
-                # ...existing code for left_panel and right_panel setup...
-                # Place everything in a vertical layout with the project file label at the top
-                container = QWidget()
-                vlayout = QVBoxLayout()
-                vlayout.setContentsMargins(0, 0, 0, 0)
-                vlayout.addWidget(self.project_file_label)
-                vlayout.addWidget(self.splitter)
-                container.setLayout(vlayout)
-                self.setCentralWidget(container)
+        def collect(item, tasks, depth=0):
             name = item.text(0)
             start = item.text(1)
             dur = item.text(2)
             dep = item.text(4) if item.columnCount() > 4 else ''
+            notes = item.text(5) if item.columnCount() > 5 else ''
             sd = _safe_date(start)
             try:
                 d = int(dur)
             except Exception:
                 d = None
             if sd and d:
-                tasks.append({'name': name, 'start': sd, 'duration': d, 'depends_on': dep})
+                # Indent name by depth for Gantt chart
+                tasks.append({'name': ('    ' * depth) + name, 'start': sd, 'duration': d, 'depends_on': dep, 'notes': notes})
+            for i in range(item.childCount()):
+                collect(item.child(i), tasks, depth+1)
         all_tasks = []
         for i in range(self.task_tree.topLevelItemCount()):
-            collect(self.task_tree.topLevelItem(i), all_tasks)
+            collect(self.task_tree.topLevelItem(i), all_tasks, 0)
         name_to_task = {t['name']: t for t in all_tasks}
         changed = True
         while changed:
@@ -530,12 +549,12 @@ class ProjectViewer(QMainWindow):
             return
         rows = []
         def collect_rows(item, parent_name=''):
-            rows.append({'Task': item.text(0), 'Start Date': item.text(1), 'Duration (days)': item.text(2), 'PDF Page': item.text(3) if item.columnCount()>3 else '', 'Depends On': item.text(4) if item.columnCount()>4 else '', 'Parent Task': parent_name})
+            rows.append({'Task': item.text(0), 'Start Date': item.text(1), 'Duration (days)': item.text(2), 'PDF Page': item.text(3) if item.columnCount()>3 else '', 'Depends On': item.text(4) if item.columnCount()>4 else '', 'Notes': item.text(5) if item.columnCount()>5 else '', 'Parent Task': parent_name})
             for i in range(item.childCount()):
                 collect_rows(item.child(i), parent_name=item.text(0))
         for i in range(self.task_tree.topLevelItemCount()):
             collect_rows(self.task_tree.topLevelItem(i))
-        fieldnames = ['Task','Start Date','Duration (days)','PDF Page','Depends On','Parent Task']
+            fieldnames = ['Task','Start Date','Duration (days)','PDF Page','Depends On','Notes','Parent Task']
         try:
             with open(path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
