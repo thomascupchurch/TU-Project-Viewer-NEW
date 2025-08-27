@@ -37,8 +37,13 @@
             <div class="col d-flex flex-column">
                 <h4>Tasks</h4>
                 <form method="post" class="row g-2 align-items-end">
+                <form method="post" class="row g-2 align-items-end" id="task-form">
+                    <input type="hidden" name="edit_idx" id="edit_idx" value="">
                     <div class="col">
-                        <input type="text" class="form-control" name="name" placeholder="Task name" required>
+                            <input type="text" class="form-control" name="name" placeholder="Task name" required>
+                        </div>
+                        <div class="col">
+                            <input type="text" class="form-control" name="responsible" placeholder="Responsible (optional)">
                     </div>
                     <div class="col">
                         <input type="date" class="form-control" name="start" required>
@@ -59,12 +64,37 @@
                         <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page (optional)" min="1">
                     </div>
                     <div class="col">
-                        <select class="form-select" name="parent">
-                            {% for value, label in parent_options %}
-                                <option value="{{ value }}">{{ label }}</option>
-                            {% endfor %}
-                        </select>
+                        <div class="input-group">
+                            <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
+                                <option value="parent" selected>Parent</option>
+                                <option value="milestone">Milestone</option>
+                            </select>
+                            <select class="form-select" name="parent" id="parent_select">
+                                {% for value, label in parent_options %}
+                                    <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
+                        </div>
                     </div>
+<script>
+// Show/hide parent or milestone input based on selection
+function toggleRelationFields() {
+    const type = document.getElementById('relation_type').value;
+    const parentSel = document.getElementById('parent_select');
+    const milestoneInp = document.getElementById('milestone_input');
+    if (type === 'parent') {
+        parentSel.classList.remove('d-none');
+        milestoneInp.classList.add('d-none');
+    } else {
+        parentSel.classList.add('d-none');
+        milestoneInp.classList.remove('d-none');
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    toggleRelationFields();
+});
+</script>
                     <div class="col-auto">
                         <button type="submit" class="btn btn-primary">Add Task</button>
                     </div>
@@ -73,6 +103,7 @@
                     <thead class="table-light">
                         <tr>
                             <th>Name</th>
+                            <th>Responsible</th>
                             <th>Start Date</th>
                             <th>Duration (days)</th>
                             <th>Depends On</th>
@@ -80,12 +111,14 @@
                             <th>Notes</th>
                             <th>PDF Page</th>
                             <th>Parent</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                     {% for task in tasks %}
-                        <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}">
+                        <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
                             <td style="white-space: pre;">{{ task.name }}</td>
+                            <td>{{ task.responsible }}</td>
                             <td>{{ task.start }}</td>
                             <td>{{ task.duration }}</td>
                             <td>{{ task.depends_on }}</td>
@@ -93,9 +126,34 @@
                             <td>{{ task.notes }}</td>
                             <td>{{ task.pdf_page }}</td>
                             <td>{{ task.parent }}</td>
+                            <td>{{ task.parent }}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
+                            </td>
+// Edit button logic: load task data into form
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.edit-task-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const idx = btn.getAttribute('data-task-idx');
+            const row = btn.closest('tr');
+            const cells = row.querySelectorAll('td');
+            // Map table cells to form fields (update as needed)
+            document.querySelector('input[name="name"]').value = cells[0].innerText.trim();
+            document.querySelector('input[name="responsible"]').value = cells[1].innerText.trim();
+            document.querySelector('input[name="start"]').value = cells[2].innerText.trim();
+            document.querySelector('input[name="duration"]').value = cells[3].innerText.trim();
+            document.querySelector('input[name="depends_on"]').value = cells[4].innerText.trim();
+            document.querySelector('input[name="resources"]').value = cells[5].innerText.trim();
+            document.querySelector('input[name="notes"]').value = cells[6].innerText.trim();
+            document.querySelector('input[name="pdf_page"]').value = cells[7].innerText.trim();
+            document.querySelector('select[name="parent"]').value = cells[8].innerText.trim();
+            document.getElementById('edit_idx').value = idx;
+        });
+    });
+});
                         </tr>
                     {% else %}
-                        <tr><td colspan="7" class="text-center text-muted">No tasks yet.</td></tr>
+                        <tr><td colspan="9" class="text-center text-muted">No tasks yet.</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
