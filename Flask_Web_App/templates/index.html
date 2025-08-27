@@ -56,64 +56,70 @@
                         <h4>Tasks</h4>
                         <form method="post" class="row g-2 align-items-end" id="task-form">
                             <input type="hidden" name="edit_idx" id="edit_idx" value="">
-                            <div class="col">
-                                <input type="text" class="form-control" name="name" placeholder="Task name" required>
-                            </div>
-                            <div class="col">
-                                <input type="text" class="form-control" name="responsible" placeholder="Responsible (optional)">
-                            </div>
-                            <div class="col">
-                                <input type="date" class="form-control" name="start" required>
-                            </div>
-                            <div class="col">
-                                <input type="number" class="form-control" name="duration" min="1" value="1" required>
-                            </div>
-                            <div class="col">
-                                <input type="text" class="form-control" name="depends_on" placeholder="Depends on (optional)">
-                            </div>
-                            <div class="col">
-                                <input type="text" class="form-control" name="resources" placeholder="Resources (optional)">
-                            </div>
-                            <div class="col">
-                                <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
-                            </div>
-                            <div class="col">
-                                <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page (optional)" min="1">
-                            </div>
-                            <div class="col">
-                                <select class="form-select" name="status" id="status">
-                                    <option value="Not Started" selected>Status: Not Started</option>
-                                    <option value="In Progress">Status: In Progress</option>
-                                    <option value="Done">Status: Done</option>
-                                </select>
-                            </div>
-                            <div class="col">
-                                <input type="number" class="form-control" name="percent_complete" placeholder="% Complete" min="0" max="100" value="0">
-                            </div>
-                            <div class="col">
-                                <div class="input-group">
-                                    <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
-                                        <option value="parent" selected>Parent</option>
-                                        <option value="milestone">Milestone</option>
+                            <!-- Row 1: Core fields -->
+                            <div class="row g-2 mb-1">
+                                <div class="col-md-3 col-12 mb-1 mb-md-0">
+                                    <input type="text" class="form-control" name="name" placeholder="Task name" required>
+                                </div>
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="text" class="form-control" name="responsible" placeholder="Responsible">
+                                </div>
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="date" class="form-control" name="start" required>
+                                </div>
+                                <div class="col-md-1 col-6 mb-1 mb-md-0">
+                                    <input type="number" class="form-control" name="duration" min="1" value="1" required placeholder="Days">
+                                </div>
+                                <div class="col-md-1 col-6 mb-1 mb-md-0">
+                                    <input type="number" class="form-control" name="percent_complete" placeholder="%" min="0" max="100" value="0">
+                                </div>
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <select class="form-select" name="status" id="status">
+                                        <option value="Not Started" selected>Status: Not Started</option>
+                                        <option value="In Progress">Status: In Progress</option>
+                                        <option value="Done">Status: Done</option>
                                     </select>
-                                    <select class="form-select" name="parent" id="parent_select">
-                                        {% for value, label in parent_options %}
-                                            <option value="{{ value }}">{{ label }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
+                                </div>
+                                <div class="col-md-3 col-12 mb-1 mb-md-0">
+                                    <div class="input-group">
+                                        <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
+                                            <option value="parent" selected>Parent</option>
+                                            <option value="milestone">Milestone</option>
+                                        </select>
+                                        <select class="form-select" name="parent" id="parent_select">
+                                            {% for value, label in parent_options %}
+                                                <option value="{{ value }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
+                                    </div>
+                                </div>
+                                <div class="col-md-1 col-12 mb-1 mb-md-0 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary w-100">Add/Save</button>
                                 </div>
                             </div>
-                            <div class="col">
-                                <label class="form-label mb-0" for="attachment">Attachments</label>
-                                <input type="file" class="form-control" name="attachment" id="attachment" multiple>
-                            </div>
-                            <div class="col">
-                                <label class="form-label mb-0" for="document_link">Document Links<br><span class="text-muted" style="font-size:0.9em;">(comma or newline separated)</span></label>
-                                <textarea class="form-control" name="document_link" id="document_link" rows="1" placeholder="https://drive.google.com/..., https://dropbox.com/..." style="min-width: 180px;"></textarea>
-                            </div>
-                            <div class="col-auto">
-                                <button type="submit" class="btn btn-primary">Add/Save Task</button>
+                            <!-- Row 2: Optional/advanced fields -->
+                            <div class="row g-2">
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="text" class="form-control" name="depends_on" placeholder="Depends on">
+                                </div>
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="text" class="form-control" name="resources" placeholder="Resources">
+                                </div>
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="text" class="form-control" name="notes" placeholder="Notes">
+                                </div>
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page" min="1">
+                                </div>
+                                <div class="col-md-2 col-12 mb-1 mb-md-0">
+                                    <label class="form-label mb-0" for="attachment">Attachments</label>
+                                    <input type="file" class="form-control" name="attachment" id="attachment" multiple>
+                                </div>
+                                <div class="col-md-2 col-12 mb-1 mb-md-0">
+                                    <label class="form-label mb-0" for="document_link">Document Links<br><span class="text-muted" style="font-size:0.9em;">(comma or newline separated)</span></label>
+                                    <textarea class="form-control" name="document_link" id="document_link" rows="1" placeholder="https://drive.google.com/..., https://dropbox.com/..." style="min-width: 120px;"></textarea>
+                                </div>
                             </div>
                         </form>
                         <table class="table table-bordered table-striped mt-3">
