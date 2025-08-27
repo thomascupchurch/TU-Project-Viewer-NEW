@@ -1,3 +1,47 @@
+# --- Critical Path Calculation ---
+def compute_critical_path(tasks):
+    # Build task dict by name
+    task_dict = {t['name']: t for t in tasks}
+    # Build adjacency and reverse adjacency (for dependencies)
+    adj = {t['name']: [] for t in tasks}
+    rev_adj = {t['name']: [] for t in tasks}
+    for t in tasks:
+        dep = t.get('depends_on')
+        if dep and dep in adj:
+            adj[dep].append(t['name'])
+            rev_adj[t['name']].append(dep)
+    # Topological sort
+    visited = set()
+    order = []
+    def dfs(u):
+        visited.add(u)
+        for v in adj[u]:
+            if v not in visited:
+                dfs(v)
+        order.append(u)
+    for t in tasks:
+        if t['name'] not in visited:
+            dfs(t['name'])
+    order = order[::-1]
+    # Forward pass: calculate earliest start/finish
+    es = {name: 0 for name in task_dict}
+    ef = {name: 0 for name in task_dict}
+    for name in order:
+        dur = int(task_dict[name].get('duration', 1) or 1)
+        es[name] = max([ef[dep] for dep in rev_adj[name]] or [0])
+        ef[name] = es[name] + dur
+    # Backward pass: calculate latest start/finish
+    max_ef = max(ef.values() or [0])
+    lf = {name: max_ef for name in task_dict}
+    ls = {name: max_ef for name in task_dict}
+    for name in reversed(order):
+        dur = int(task_dict[name].get('duration', 1) or 1)
+        if adj[name]:
+            lf[name] = min([ls[succ] for succ in adj[name]])
+        ls[name] = lf[name] - dur
+    # Critical path: tasks where es==ls
+    critical = set(name for name in task_dict if es[name] == ls[name])
+    return critical
 from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response
 import csv
 import os
@@ -41,6 +85,7 @@ def parse_tasks_for_gantt(tasks):
 @app.route('/gantt.png')
 def gantt_chart():
     parsed = parse_tasks_for_gantt(tasks)
+    critical = compute_critical_path(tasks)
     fig, ax = plt.subplots(figsize=(8, 4))
     if not parsed:
         ax.text(0.5, 0.5, 'No tasks to display', ha='center', va='center', fontsize=16, color='gray', transform=ax.transAxes)
@@ -52,11 +97,12 @@ def gantt_chart():
         durations = [t['duration'] for t in parsed]
         y_pos = list(range(len(parsed)))
         for i, t in enumerate(parsed):
+            base_name = t['name'].lstrip()
             if t.get('is_milestone'):
-                # Draw milestone as a diamond at the end of its duration
                 ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='red', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
             else:
-                ax.barh(i, t['duration'], left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
+                color = 'crimson' if base_name in critical else '#FF8200'
+                ax.barh(i, t['duration'], left=starts[i], height=0.4, align='center', color=color, edgecolor='black')
         ax.set_yticks(y_pos)
         ax.set_yticklabels(names)
         ax.set_xlabel('Date')
