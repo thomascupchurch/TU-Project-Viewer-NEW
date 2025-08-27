@@ -97,12 +97,10 @@ def gantt_chart():
         durations = [t['duration'] for t in parsed]
         y_pos = list(range(len(parsed)))
         for i, t in enumerate(parsed):
-            base_name = t['name'].lstrip()
             if t.get('is_milestone'):
-                ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='red', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
+                ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='#555555', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
             else:
-                color = 'crimson' if base_name in critical else '#FF8200'
-                ax.barh(i, t['duration'], left=starts[i], height=0.4, align='center', color=color, edgecolor='black')
+                ax.barh(i, t['duration'], left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
         ax.set_yticks(y_pos)
         ax.set_yticklabels(names)
         ax.set_xlabel('Date')
