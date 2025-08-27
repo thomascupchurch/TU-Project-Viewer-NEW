@@ -135,7 +135,22 @@ def gantt_chart():
             if t.get('is_milestone'):
                 ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='#FF8200', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
             else:
-                ax.barh(i, t['duration'], left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
+                # Find the original task to get percent_complete
+                task_name = t['name'].lstrip()
+                orig_task = next((task for task in tasks if task['name'] == task_name), None)
+                try:
+                    percent = float(orig_task.get('percent_complete', 0)) if orig_task else 0
+                except Exception:
+                    percent = 0
+                percent = max(0, min(percent, 100))
+                dur = t['duration']
+                done_dur = dur * percent / 100.0
+                # Draw completed (orange) part
+                if done_dur > 0:
+                    ax.barh(i, done_dur, left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
+                # Draw remaining (gray) part
+                if done_dur < dur:
+                    ax.barh(i, dur - done_dur, left=starts[i] + done_dur, height=0.4, align='center', color='#555555', edgecolor='black')
         ax.set_yticks(y_pos)
         ax.set_yticklabels(names)
         ax.set_xlabel('Date')
