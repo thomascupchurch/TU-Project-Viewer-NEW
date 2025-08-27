@@ -14,7 +14,73 @@
                 <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
                     <input type="file" class="form-control" name="pdf" accept="application/pdf" required>
                     <button type="submit" class="btn btn-primary">Upload PDF</button>
-                </form>
+                </div>
+</div>
+<script>
+// Show/hide parent or milestone input based on selection
+function toggleRelationFields() {
+    const type = document.getElementById('relation_type').value;
+    const parentSel = document.getElementById('parent_select');
+    const milestoneInp = document.getElementById('milestone_input');
+    if (type === 'parent') {
+        parentSel.classList.remove('d-none');
+        milestoneInp.classList.add('d-none');
+    } else {
+        parentSel.classList.add('d-none');
+        milestoneInp.classList.remove('d-none');
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    toggleRelationFields();
+    // Edit button logic: load task data into form
+    document.querySelectorAll('.edit-task-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const idx = btn.getAttribute('data-task-idx');
+            const row = btn.closest('tr');
+            const cells = row.querySelectorAll('td');
+            document.querySelector('input[name="name"]').value = cells[0].innerText.trim();
+            document.querySelector('input[name="responsible"]').value = cells[1].innerText.trim();
+            document.querySelector('input[name="start"]').value = cells[2].innerText.trim();
+            document.querySelector('input[name="duration"]').value = cells[3].innerText.trim();
+            document.querySelector('input[name="depends_on"]').value = cells[4].innerText.trim();
+            document.querySelector('input[name="resources"]').value = cells[5].innerText.trim();
+            document.querySelector('input[name="notes"]').value = cells[6].innerText.trim();
+            document.querySelector('input[name="pdf_page"]').value = cells[7].innerText.trim();
+            // Handle parent/milestone
+            const parentVal = cells[8].innerText.trim();
+            if (parentVal && parentVal !== 'None') {
+                document.getElementById('relation_type').value = 'parent';
+                toggleRelationFields();
+                document.getElementById('parent_select').value = parentVal;
+                document.getElementById('milestone_input').value = '';
+            } else {
+                document.getElementById('relation_type').value = 'milestone';
+                toggleRelationFields();
+                document.getElementById('milestone_input').value = document.querySelector('input[name="name"]').value;
+                document.getElementById('parent_select').value = '';
+            }
+            document.getElementById('edit_idx').value = idx;
+        });
+    });
+    // PDF click-to-jump logic
+    const rows = document.querySelectorAll('.task-row');
+    rows.forEach(row => {
+        row.addEventListener('click', function() {
+            const page = row.getAttribute('data-pdf-page');
+            if (page && !isNaN(page) && Number(page) > 0) {
+                const iframe = document.getElementById('pdfjs-viewer');
+                if (iframe) {
+                    let src = iframe.getAttribute('src') || '';
+                    src = src.replace(/#page=\d+/, '');
+                    src = src.split('#')[0];
+                    src += '#page=' + page;
+                    iframe.setAttribute('src', src);
+                }
+            }
+        });
+    });
+});
+</script>
                 {% if pdf_uploaded %}
                 <div class="border p-2 bg-light">
                     <iframe id="pdfjs-viewer" src="/static/pdfjs/web/viewer.html?file=/pdf" width="100%" height="400" style="border:1px solid #888;"></iframe>
@@ -36,160 +102,102 @@
         <div class="row row-cols-1 row-cols-md-2 g-4 mb-4 align-items-stretch">
             <div class="col d-flex flex-column">
                 <h4>Tasks</h4>
-                <form method="post" class="row g-2 align-items-end">
                 <form method="post" class="row g-2 align-items-end" id="task-form">
                     <input type="hidden" name="edit_idx" id="edit_idx" value="">
-                    <div class="col">
+        milestoneInp.classList.add('d-none');
+
+                    <h4>Tasks</h4>
+                    <form method="post" class="row g-2 align-items-end" id="task-form">
+                        <input type="hidden" name="edit_idx" id="edit_idx" value="">
+                        <div class="col">
                             <input type="text" class="form-control" name="name" placeholder="Task name" required>
                         </div>
                         <div class="col">
                             <input type="text" class="form-control" name="responsible" placeholder="Responsible (optional)">
-                    </div>
-                    <div class="col">
-                        <input type="date" class="form-control" name="start" required>
-                    </div>
-                    <div class="col">
-                        <input type="number" class="form-control" name="duration" min="1" value="1" required>
-                    </div>
-                    <div class="col">
-                        <input type="text" class="form-control" name="depends_on" placeholder="Depends on (optional)">
-                    </div>
-                    <div class="col">
-                        <input type="text" class="form-control" name="resources" placeholder="Resources (optional)">
-                    </div>
-                    <div class="col">
-                        <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
-                    </div>
-                    <div class="col">
-                        <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page (optional)" min="1">
-                    </div>
-                    <div class="col">
-                        <div class="input-group">
-                            <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
-                                <option value="parent" selected>Parent</option>
-                                <option value="milestone">Milestone</option>
-                            </select>
-                            <select class="form-select" name="parent" id="parent_select">
-                                {% for value, label in parent_options %}
-                                    <option value="{{ value }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                            <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
                         </div>
-                    </div>
-<script>
-// Show/hide parent or milestone input based on selection
-function toggleRelationFields() {
-    const type = document.getElementById('relation_type').value;
-    const parentSel = document.getElementById('parent_select');
-    const milestoneInp = document.getElementById('milestone_input');
-    if (type === 'parent') {
-        parentSel.classList.remove('d-none');
-        milestoneInp.classList.add('d-none');
-    } else {
-        parentSel.classList.add('d-none');
-        milestoneInp.classList.remove('d-none');
-    }
-}
-document.addEventListener('DOMContentLoaded', function() {
-    toggleRelationFields();
-});
-</script>
-                    <div class="col-auto">
-                        <button type="submit" class="btn btn-primary">Add Task</button>
-                    </div>
-                </form>
-                <table class="table table-bordered table-striped mt-3">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Name</th>
-                            <th>Responsible</th>
-                            <th>Start Date</th>
-                            <th>Duration (days)</th>
-                            <th>Depends On</th>
-                            <th>Resources</th>
-                            <th>Notes</th>
-                            <th>PDF Page</th>
-                            <th>Parent</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for task in tasks %}
-                        <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
-                            <td style="white-space: pre;">{{ task.name }}</td>
-                            <td>{{ task.responsible }}</td>
-                            <td>{{ task.start }}</td>
-                            <td>{{ task.duration }}</td>
-                            <td>{{ task.depends_on }}</td>
-                            <td>{{ task.resources }}</td>
-                            <td>{{ task.notes }}</td>
-                            <td>{{ task.pdf_page }}</td>
-                            <td>{{ task.parent }}</td>
-                            <td>{{ task.parent }}</td>
-                            <td>
-                                <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
-                            </td>
-// Edit button logic: load task data into form
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.edit-task-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            const idx = btn.getAttribute('data-task-idx');
-            const row = btn.closest('tr');
-            const cells = row.querySelectorAll('td');
-            // Map table cells to form fields (update as needed)
-            document.querySelector('input[name="name"]').value = cells[0].innerText.trim();
-            document.querySelector('input[name="responsible"]').value = cells[1].innerText.trim();
-            document.querySelector('input[name="start"]').value = cells[2].innerText.trim();
-            document.querySelector('input[name="duration"]').value = cells[3].innerText.trim();
-            document.querySelector('input[name="depends_on"]').value = cells[4].innerText.trim();
-            document.querySelector('input[name="resources"]').value = cells[5].innerText.trim();
-            document.querySelector('input[name="notes"]').value = cells[6].innerText.trim();
-            document.querySelector('input[name="pdf_page"]').value = cells[7].innerText.trim();
-            document.querySelector('select[name="parent"]').value = cells[8].innerText.trim();
-            document.getElementById('edit_idx').value = idx;
-        });
-    });
-});
-                        </tr>
-                    {% else %}
-                        <tr><td colspan="9" class="text-center text-muted">No tasks yet.</td></tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <div class="col d-flex flex-column">
-                <h4>Project Timeline</h4>
-                <img src="/gantt.png?{{ tasks|length }}" alt="Gantt Chart" class="img-fluid border mb-2">
-                <div class="mb-2">
-                    <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
-                    <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm">Download Timeline (PDF)</a>
+                        <div class="col">
+                            <input type="date" class="form-control" name="start" required>
+                        </div>
+                        <div class="col">
+                            <input type="number" class="form-control" name="duration" min="1" value="1" required>
+                        </div>
+                        <div class="col">
+                            <input type="text" class="form-control" name="depends_on" placeholder="Depends on (optional)">
+                        </div>
+                        <div class="col">
+                            <input type="text" class="form-control" name="resources" placeholder="Resources (optional)">
+                        </div>
+                        <div class="col">
+                            <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
+                        </div>
+                        <div class="col">
+                            <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page (optional)" min="1">
+                        </div>
+                        <div class="col">
+                            <div class="input-group">
+                                <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
+                                    <option value="parent" selected>Parent</option>
+                                    <option value="milestone">Milestone</option>
+                                </select>
+                                <select class="form-select" name="parent" id="parent_select">
+                                    {% for value, label in parent_options %}
+                                        <option value="{{ value }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary">Add/Save Task</button>
+                        </div>
+                    </form>
+                    <table class="table table-bordered table-striped mt-3">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th>Responsible</th>
+                                <th>Start Date</th>
+                                <th>Duration (days)</th>
+                                <th>Depends On</th>
+                                <th>Resources</th>
+                                <th>Notes</th>
+                                <th>PDF Page</th>
+                                <th>Parent</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% if tasks %}
+                            {% for task in tasks %}
+                            <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
+                                <td style="white-space: pre;">{{ task.name }}</td>
+                                <td>{{ task.responsible }}</td>
+                                <td>{{ task.start }}</td>
+                                <td>{{ task.duration }}</td>
+                                <td>{{ task.depends_on }}</td>
+                                <td>{{ task.resources }}</td>
+                                <td>{{ task.notes }}</td>
+                                <td>{{ task.pdf_page }}</td>
+                                <td>{{ task.parent }}</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr><td colspan="10" class="text-center text-muted">No tasks yet.</td></tr>
+                        {% endif %}
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-        </div>
-    </div>
-</body>
-</body>
-<script>
-// Enable click-to-jump for PDF page association by reloading the iframe with #page=...
-document.addEventListener('DOMContentLoaded', function() {
-    const rows = document.querySelectorAll('.task-row');
-    rows.forEach(row => {
-        row.addEventListener('click', function() {
-            const page = row.getAttribute('data-pdf-page');
-            if (page && !isNaN(page) && Number(page) > 0) {
-                const iframe = document.getElementById('pdfjs-viewer');
-                if (iframe) {
-                    let src = iframe.getAttribute('src') || '';
-                    // Remove any existing #page=... hash
-                    src = src.replace(/#page=\d+/, '');
-                    // Remove any other hash
-                    src = src.split('#')[0];
-                    // Add the new page hash
-                    src += '#page=' + page;
-                    // Force reload by resetting src
-                    iframe.setAttribute('src', src);
-                }
+                <div class="col d-flex flex-column">
+                    <h4>Project Timeline</h4>
+                    <img src="/gantt.png?{{ tasks|length }}" alt="Gantt Chart" class="img-fluid border mb-2">
+                    <div class="mb-2">
+                        <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
+                        <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm">Download Timeline (PDF)</a>
+                    </div>
+                </div>
             }
         });
     });

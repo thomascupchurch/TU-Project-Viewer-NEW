@@ -232,7 +232,16 @@ def index():
                 'parent': parent,
                 'milestone': milestone
             }
+            # Fix: If editing, update the correct task by name (not just index), to avoid issues if table order changes
             if edit_idx.isdigit() and int(edit_idx) < len(tasks):
+                # Try to match by name if possible
+                old_task = tasks[int(edit_idx)]
+                # If the name changed, update all children to point to the new name as parent
+                old_name = old_task.get('name')
+                if old_name and old_name != name:
+                    for t in tasks:
+                        if t.get('parent') == old_name:
+                            t['parent'] = name
                 tasks[int(edit_idx)] = new_task
             else:
                 tasks.append(new_task)
