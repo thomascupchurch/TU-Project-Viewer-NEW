@@ -297,8 +297,31 @@ def index():
         resources = request.form.get('resources', '').strip()
         notes = request.form.get('notes', '').strip()
         pdf_page = request.form.get('pdf_page', '').strip()
-        status = request.form.get('status', 'Not Started').strip()
         percent_complete = request.form.get('percent_complete', '0').strip()
+        # Handle multiple file uploads for task attachments
+        attachment_filenames = []
+        if 'attachment' in request.files:
+            files = request.files.getlist('attachment')
+            for attachment in files:
+                if attachment and attachment.filename:
+                    safe_name = attachment.filename.replace('..', '').replace('/', '_').replace('\\', '_')
+                    save_path = os.path.join(UPLOAD_FOLDER, safe_name)
+                    attachment.save(save_path)
+                    attachment_filenames.append(safe_name)
+        # Handle multiple document links (comma or newline separated)
+        document_links = request.form.get('document_link', '').strip()
+        links_list = [l.strip() for l in document_links.replace('\r', '').replace('\n', ',').split(',') if l.strip()]
+        # Automatically set status based on percent_complete
+        try:
+            percent_val = float(percent_complete)
+        except Exception:
+            percent_val = 0
+        if percent_val >= 100:
+            status = 'Completed'
+        elif percent_val > 0:
+            status = 'In Progress'
+        else:
+            status = 'Not Started'
         relation_type = request.form.get('relation_type', 'parent')
         parent = request.form.get('parent', '').strip() if relation_type == 'parent' else ''
         milestone = request.form.get('milestone', '').strip() if relation_type == 'milestone' else ''
@@ -328,7 +351,9 @@ def index():
                 'status': status,
                 'percent_complete': percent_complete,
                 'parent': parent,
-                'milestone': milestone
+                'milestone': milestone,
+                'attachments': attachment_filenames,
+                'document_links': links_list
             }
             # Fix: If editing, update the correct task by name (not just index), to avoid issues if table order changes
             if edit_idx.isdigit() and int(edit_idx) < len(tasks):

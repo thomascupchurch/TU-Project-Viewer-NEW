@@ -104,6 +104,14 @@
                                     <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
                                 </div>
                             </div>
+                            <div class="col">
+                                <label class="form-label mb-0" for="attachment">Attachments</label>
+                                <input type="file" class="form-control" name="attachment" id="attachment" multiple>
+                            </div>
+                            <div class="col">
+                                <label class="form-label mb-0" for="document_link">Document Links<br><span class="text-muted" style="font-size:0.9em;">(comma or newline separated)</span></label>
+                                <textarea class="form-control" name="document_link" id="document_link" rows="1" placeholder="https://drive.google.com/..., https://dropbox.com/..." style="min-width: 180px;"></textarea>
+                            </div>
                             <div class="col-auto">
                                 <button type="submit" class="btn btn-primary">Add/Save Task</button>
                             </div>
@@ -122,6 +130,8 @@
                                     <th>Status</th>
                                     <th>% Complete</th>
                                     <th>Parent</th>
+                                    <th>Attachments</th>
+                                    <th>Links</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -144,6 +154,20 @@
                                         </div>
                                     </td>
                                     <td>{{ task.parent }}</td>
+                                    <td>
+                                        {% if task.attachments %}
+                                            {% for fname in task.attachments %}
+                                                <a href="/static/uploads/{{ fname }}" target="_blank">{{ fname }}</a>{% if not loop.last %}, {% endif %}
+                                            {% endfor %}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if task.document_links %}
+                                            {% for link in task.document_links %}
+                                                <a href="{{ link }}" target="_blank">[Link {{ loop.index }}]</a>{% if not loop.last %}, {% endif %}
+                                            {% endfor %}
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
                                     </td>
