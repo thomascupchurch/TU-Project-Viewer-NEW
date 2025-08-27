@@ -66,6 +66,16 @@
                                 <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page (optional)" min="1">
                             </div>
                             <div class="col">
+                                <select class="form-select" name="status" id="status">
+                                    <option value="Not Started" selected>Status: Not Started</option>
+                                    <option value="In Progress">Status: In Progress</option>
+                                    <option value="Done">Status: Done</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <input type="number" class="form-control" name="percent_complete" placeholder="% Complete" min="0" max="100" value="0">
+                            </div>
+                            <div class="col">
                                 <div class="input-group">
                                     <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
                                         <option value="parent" selected>Parent</option>
@@ -94,6 +104,8 @@
                                     <th>Resources</th>
                                     <th>Notes</th>
                                     <th>PDF Page</th>
+                                    <th>Status</th>
+                                    <th>% Complete</th>
                                     <th>Parent</th>
                                     <th>Action</th>
                                 </tr>
@@ -110,6 +122,12 @@
                                     <td>{{ task.resources }}</td>
                                     <td>{{ task.notes }}</td>
                                     <td>{{ task.pdf_page }}</td>
+                                    <td>{{ task.status|default('Not Started') }}</td>
+                                    <td>
+                                        <div class="progress" style="height: 20px;">
+                                            <div class="progress-bar" role="progressbar" style="width: {{ task.percent_complete|default('0') }}%;" aria-valuenow="{{ task.percent_complete|default('0') }}" aria-valuemin="0" aria-valuemax="100">{{ task.percent_complete|default('0') }}%</div>
+                                        </div>
+                                    </td>
                                     <td>{{ task.parent }}</td>
                                     <td>
                                         <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
@@ -127,7 +145,12 @@
                         <img src="/gantt.png?{{ tasks|length }}" alt="Gantt Chart" class="img-fluid border mb-2">
                         <div class="mb-2">
                             <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
-                            <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm">Download Timeline (PDF)</a>
+                            <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm me-2">Download Timeline (PDF)</a>
+                            <a href="/calendar_export" class="btn btn-outline-success btn-sm me-2">Export Calendar (.ics)</a>
+                            <span class="me-2">Zoom:</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm gantt-zoom" data-zoom="day">Day</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm gantt-zoom" data-zoom="week">Week</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm gantt-zoom" data-zoom="month">Month</button>
                         </div>
                     </div>
                 </div>
@@ -165,8 +188,10 @@ document.addEventListener('DOMContentLoaded', function() {
             document.querySelector('input[name="resources"]').value = cells[5].innerText.trim();
             document.querySelector('input[name="notes"]').value = cells[6].innerText.trim();
             document.querySelector('input[name="pdf_page"]').value = cells[7].innerText.trim();
+            document.getElementById('status').value = cells[8].innerText.trim() || 'Not Started';
+            document.querySelector('input[name="percent_complete"]').value = parseInt(cells[9].innerText) || 0;
             // Handle parent/milestone
-            const parentVal = cells[8].innerText.trim();
+            const parentVal = cells[10].innerText.trim();
             if (parentVal && parentVal !== 'None') {
                 document.getElementById('relation_type').value = 'parent';
                 toggleRelationFields();
@@ -197,6 +222,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     iframe.setAttribute('src', src);
                 }
             }
+        });
+    });
+    // Gantt chart zoom controls
+    document.querySelectorAll('.gantt-zoom').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const zoom = btn.getAttribute('data-zoom');
+            fetch(`/set_gantt_zoom/${zoom}`)
+                .then(() => {
+                    // Reload Gantt chart image
+                    document.querySelector('img[alt="Gantt Chart"]').src = `/gantt.png?${Date.now()}`;
+                });
         });
     });
 });

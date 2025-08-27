@@ -1,3 +1,56 @@
+
+# --- Imports ---
+import csv
+import os
+import io
+import json
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend for server
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response
+
+# --- App Setup ---
+app = Flask(__name__)
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+PDF_FILENAME = 'uploaded.pdf'
+tasks = []
+
+# --- Calendar export (iCalendar .ics) ---
+@app.route('/calendar_export')
+def calendar_export():
+    def to_ics_datetime(dt):
+        return dt.strftime('%Y%m%dT%H%M%S')
+    ics = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//TU Project Planner//EN'
+    ]
+    for t in tasks:
+        try:
+            start = datetime.strptime(t.get('start', ''), '%Y-%m-%d')
+            duration = int(t.get('duration', 1) or 1)
+            end = start + timedelta(days=duration)
+            summary = t.get('name', 'Task')
+            description = t.get('notes', '')
+            ics.extend([
+                'BEGIN:VEVENT',
+                f'SUMMARY:{summary}',
+                f'DTSTART:{to_ics_datetime(start)}',
+                f'DTEND:{to_ics_datetime(end)}',
+                f'DESCRIPTION:{description}',
+                'END:VEVENT'
+            ])
+        except Exception:
+            continue
+    ics.append('END:VCALENDAR')
+    ics_str = '\r\n'.join(ics)
+    return Response(ics_str, mimetype='text/calendar', headers={
+        'Content-Disposition': 'attachment; filename=project.ics'
+    })
+
 # --- Critical Path Calculation ---
 def compute_critical_path(tasks):
     # Build task dict by name
@@ -42,24 +95,6 @@ def compute_critical_path(tasks):
     # Critical path: tasks where es==ls
     critical = set(name for name in task_dict if es[name] == ls[name])
     return critical
-from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response
-import csv
-import os
-import io
-import json
-import matplotlib
-matplotlib.use('Agg')  # Use non-GUI backend for server
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from datetime import datetime, timedelta
-
-app = Flask(__name__)
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-PDF_FILENAME = 'uploaded.pdf'
-
-# In-memory task list (replace with file/db for production)
-tasks = []
 
 def parse_tasks_for_gantt(tasks):
     # Flatten tasks into a sorted list with indentation for sub-tasks
