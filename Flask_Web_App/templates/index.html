@@ -8,13 +8,131 @@
 <body>
     <div class="container-fluid my-4">
     <h1 class="mb-4">TU's Project Hub</h1>
-        <div class="row row-cols-1 row-cols-md-2 g-4 mb-4 align-items-stretch">
-            <div class="col">
-                <h4>PDF Upload & Viewer</h4>
-                <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
-                    <input type="file" class="form-control" name="pdf" accept="application/pdf" required>
-                    <button type="submit" class="btn btn-primary">Upload PDF</button>
+            <div class="row g-4 align-items-stretch" style="min-height: 80vh;">
+                <!-- Left: PDF viewer (main focus) -->
+                <div class="col-12 col-lg-7 d-flex flex-column">
+                    <div class="mb-3">
+                        <h4>PDF Upload & Viewer</h4>
+                        <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
+                            <input type="file" class="form-control" name="pdf" accept="application/pdf" required>
+                            <button type="submit" class="btn btn-primary">Upload PDF</button>
+                        </form>
+                    </div>
+                    <div class="flex-grow-1 border p-2 bg-light d-flex flex-column" style="min-height: 600px;">
+                        {% if pdf_uploaded %}
+                            <iframe id="pdfjs-viewer" src="/static/pdfjs/web/viewer.html?file=/pdf" width="100%" height="100%" style="border:1px solid #888; min-height: 600px;"></iframe>
+                        {% else %}
+                            <p class="text-muted">No PDF uploaded yet.</p>
+                        {% endif %}
+                    </div>
                 </div>
+                <!-- Right: Tasks and Gantt chart stacked -->
+                <div class="col-12 col-lg-5 d-flex flex-column">
+                    <div class="mb-3">
+                        <h4>Project Save/Load</h4>
+                        <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
+                            <input type="file" class="form-control" name="project_upload" accept="application/json" required>
+                            <button type="submit" class="btn btn-secondary">Load Project</button>
+                        </form>
+                        <a href="/download_project" class="btn btn-warning fw-bold me-2" title="Save your project as a JSON file for backup or sharing.">Save Project (Download as JSON)</a>
+                        <a href="/download_csv" class="btn btn-info">Export CSV</a>
+                    </div>
+                    <div class="mb-3">
+                        <h4>Tasks</h4>
+                        <form method="post" class="row g-2 align-items-end" id="task-form">
+                            <input type="hidden" name="edit_idx" id="edit_idx" value="">
+                            <div class="col">
+                                <input type="text" class="form-control" name="name" placeholder="Task name" required>
+                            </div>
+                            <div class="col">
+                                <input type="text" class="form-control" name="responsible" placeholder="Responsible (optional)">
+                            </div>
+                            <div class="col">
+                                <input type="date" class="form-control" name="start" required>
+                            </div>
+                            <div class="col">
+                                <input type="number" class="form-control" name="duration" min="1" value="1" required>
+                            </div>
+                            <div class="col">
+                                <input type="text" class="form-control" name="depends_on" placeholder="Depends on (optional)">
+                            </div>
+                            <div class="col">
+                                <input type="text" class="form-control" name="resources" placeholder="Resources (optional)">
+                            </div>
+                            <div class="col">
+                                <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
+                            </div>
+                            <div class="col">
+                                <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page (optional)" min="1">
+                            </div>
+                            <div class="col">
+                                <div class="input-group">
+                                    <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
+                                        <option value="parent" selected>Parent</option>
+                                        <option value="milestone">Milestone</option>
+                                    </select>
+                                    <select class="form-select" name="parent" id="parent_select">
+                                        {% for value, label in parent_options %}
+                                            <option value="{{ value }}">{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <button type="submit" class="btn btn-primary">Add/Save Task</button>
+                            </div>
+                        </form>
+                        <table class="table table-bordered table-striped mt-3">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Responsible</th>
+                                    <th>Start Date</th>
+                                    <th>Duration (days)</th>
+                                    <th>Depends On</th>
+                                    <th>Resources</th>
+                                    <th>Notes</th>
+                                    <th>PDF Page</th>
+                                    <th>Parent</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {% if tasks %}
+                                {% for task in tasks %}
+                                <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
+                                    <td style="white-space: pre;">{{ task.name }}</td>
+                                    <td>{{ task.responsible }}</td>
+                                    <td>{{ task.start }}</td>
+                                    <td>{{ task.duration }}</td>
+                                    <td>{{ task.depends_on }}</td>
+                                    <td>{{ task.resources }}</td>
+                                    <td>{{ task.notes }}</td>
+                                    <td>{{ task.pdf_page }}</td>
+                                    <td>{{ task.parent }}</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr><td colspan="10" class="text-center text-muted">No tasks yet.</td></tr>
+                            {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="flex-grow-1 d-flex flex-column justify-content-end">
+                        <h4>Project Timeline</h4>
+                        <img src="/gantt.png?{{ tasks|length }}" alt="Gantt Chart" class="img-fluid border mb-2">
+                        <div class="mb-2">
+                            <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
+                            <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm">Download Timeline (PDF)</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 </div>
 <script>
 // Show/hide parent or milestone input based on selection
@@ -81,126 +199,4 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-                {% if pdf_uploaded %}
-                <div class="border p-2 bg-light">
-                    <iframe id="pdfjs-viewer" src="/static/pdfjs/web/viewer.html?file=/pdf" width="100%" height="400" style="border:1px solid #888;"></iframe>
-                </div>
-                {% else %}
-                <p class="text-muted">No PDF uploaded yet.</p>
-                {% endif %}
-            </div>
-            <div class="col">
-                <h4>Project Save/Load</h4>
-                <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
-                    <input type="file" class="form-control" name="project_upload" accept="application/json" required>
-                    <button type="submit" class="btn btn-secondary">Load Project</button>
-                </form>
-                <a href="/download_project" class="btn btn-warning fw-bold me-2" title="Save your project as a JSON file for backup or sharing.">Save Project (Download as JSON)</a>
-                <a href="/download_csv" class="btn btn-info">Export CSV</a>
-            </div>
-        </div>
-        <div class="row row-cols-1 row-cols-md-2 g-4 mb-4 align-items-stretch">
-            <div class="col d-flex flex-column">
-                <h4>Tasks</h4>
-                <form method="post" class="row g-2 align-items-end" id="task-form">
-                    <input type="hidden" name="edit_idx" id="edit_idx" value="">
-        milestoneInp.classList.add('d-none');
 
-                    <h4>Tasks</h4>
-                    <form method="post" class="row g-2 align-items-end" id="task-form">
-                        <input type="hidden" name="edit_idx" id="edit_idx" value="">
-                        <div class="col">
-                            <input type="text" class="form-control" name="name" placeholder="Task name" required>
-                        </div>
-                        <div class="col">
-                            <input type="text" class="form-control" name="responsible" placeholder="Responsible (optional)">
-                        </div>
-                        <div class="col">
-                            <input type="date" class="form-control" name="start" required>
-                        </div>
-                        <div class="col">
-                            <input type="number" class="form-control" name="duration" min="1" value="1" required>
-                        </div>
-                        <div class="col">
-                            <input type="text" class="form-control" name="depends_on" placeholder="Depends on (optional)">
-                        </div>
-                        <div class="col">
-                            <input type="text" class="form-control" name="resources" placeholder="Resources (optional)">
-                        </div>
-                        <div class="col">
-                            <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
-                        </div>
-                        <div class="col">
-                            <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page (optional)" min="1">
-                        </div>
-                        <div class="col">
-                            <div class="input-group">
-                                <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
-                                    <option value="parent" selected>Parent</option>
-                                    <option value="milestone">Milestone</option>
-                                </select>
-                                <select class="form-select" name="parent" id="parent_select">
-                                    {% for value, label in parent_options %}
-                                        <option value="{{ value }}">{{ label }}</option>
-                                    {% endfor %}
-                                </select>
-                                <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
-                            </div>
-                        </div>
-                        <div class="col-auto">
-                            <button type="submit" class="btn btn-primary">Add/Save Task</button>
-                        </div>
-                    </form>
-                    <table class="table table-bordered table-striped mt-3">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Name</th>
-                                <th>Responsible</th>
-                                <th>Start Date</th>
-                                <th>Duration (days)</th>
-                                <th>Depends On</th>
-                                <th>Resources</th>
-                                <th>Notes</th>
-                                <th>PDF Page</th>
-                                <th>Parent</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        {% if tasks %}
-                            {% for task in tasks %}
-                            <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
-                                <td style="white-space: pre;">{{ task.name }}</td>
-                                <td>{{ task.responsible }}</td>
-                                <td>{{ task.start }}</td>
-                                <td>{{ task.duration }}</td>
-                                <td>{{ task.depends_on }}</td>
-                                <td>{{ task.resources }}</td>
-                                <td>{{ task.notes }}</td>
-                                <td>{{ task.pdf_page }}</td>
-                                <td>{{ task.parent }}</td>
-                                <td>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        {% else %}
-                            <tr><td colspan="10" class="text-center text-muted">No tasks yet.</td></tr>
-                        {% endif %}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="col d-flex flex-column">
-                    <h4>Project Timeline</h4>
-                    <img src="/gantt.png?{{ tasks|length }}" alt="Gantt Chart" class="img-fluid border mb-2">
-                    <div class="mb-2">
-                        <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
-                        <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm">Download Timeline (PDF)</a>
-                    </div>
-                </div>
-            }
-        });
-    });
-});
-</script>
-</html>
