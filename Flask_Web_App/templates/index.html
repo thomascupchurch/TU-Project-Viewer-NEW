@@ -134,6 +134,7 @@
             </div>
         </div>
 </div>
+
 <script>
 // Show/hide parent or milestone input based on selection
 function toggleRelationFields() {
@@ -181,9 +182,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     // PDF click-to-jump logic
-    const rows = document.querySelectorAll('.task-row');
-    rows.forEach(row => {
-        row.addEventListener('click', function() {
+    document.querySelectorAll('.task-row').forEach(function(row) {
+        row.addEventListener('click', function(e) {
+            // Prevent click if edit button is clicked
+            if (e.target.classList.contains('edit-task-btn')) return;
             const page = row.getAttribute('data-pdf-page');
             if (page && !isNaN(page) && Number(page) > 0) {
                 const iframe = document.getElementById('pdfjs-viewer');
