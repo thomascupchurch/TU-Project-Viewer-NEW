@@ -54,7 +54,7 @@
                     </div>
                     <div class="mb-3">
                         <h4>Tasks</h4>
-                        <form method="post" class="row g-2 align-items-end" id="task-form">
+                        <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end" id="task-form">
                             <input type="hidden" name="edit_idx" id="edit_idx" value="">
                             <!-- Row 1: Core fields -->
                             <div class="row g-2 mb-1">
@@ -161,10 +161,12 @@
                                     </td>
                                     <td>{{ task.parent }}</td>
                                     <td>
-                                        {% if task.attachments %}
+                                        {% if task.attachments and task.attachments|length > 0 %}
                                             {% for fname in task.attachments %}
                                                 <a href="/static/uploads/{{ fname }}" target="_blank">{{ fname }}</a>{% if not loop.last %}, {% endif %}
                                             {% endfor %}
+                                        {% else %}
+                                            <span class="text-muted">&mdash;</span>
                                         {% endif %}
                                     </td>
                                     <td>

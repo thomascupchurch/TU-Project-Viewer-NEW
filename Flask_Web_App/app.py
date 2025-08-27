@@ -13,6 +13,7 @@ from flask import Flask, render_template, request, redirect, url_for, Response, 
 
 # --- App Setup ---
 app = Flask(__name__)
+app.secret_key = 'replace-this-with-a-strong-random-secret-key-2025'
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 PDF_FILENAME = 'uploaded.pdf'
@@ -23,29 +24,28 @@ tasks = []
 def calendar_export():
     def to_ics_datetime(dt):
         return dt.strftime('%Y%m%dT%H%M%S')
-    ics = [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        'PRODID:-//TU Project Planner//EN'
-    ]
-    for t in tasks:
-        try:
-            start = datetime.strptime(t.get('start', ''), '%Y-%m-%d')
-            duration = int(t.get('duration', 1) or 1)
-            end = start + timedelta(days=duration)
-            summary = t.get('name', 'Task')
-            description = t.get('notes', '')
-            ics.extend([
-                'BEGIN:VEVENT',
-                f'SUMMARY:{summary}',
-                f'DTSTART:{to_ics_datetime(start)}',
-                f'DTEND:{to_ics_datetime(end)}',
-                f'DESCRIPTION:{description}',
-                'END:VEVENT'
-            ])
-        except Exception:
-            continue
-    ics.append('END:VCALENDAR')
+# --- Project Export as ZIP (JSON + Attachments) ---
+import zipfile
+
+@app.route('/download_project_zip')
+def download_project_zip():
+    # Prepare in-memory zip
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # Add project.json
+        project_json = json.dumps(tasks, indent=2).encode('utf-8')
+        zf.writestr('project.json', project_json)
+        # Add all unique attachments referenced in tasks
+        added = set()
+        for t in tasks:
+            for fname in t.get('attachments', []):
+                if fname and fname not in added:
+                    fpath = os.path.join(UPLOAD_FOLDER, fname)
+                    if os.path.exists(fpath):
+                        zf.write(fpath, arcname=os.path.join('attachments', fname))
+                        added.add(fname)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name='project_bundle.zip', mimetype='application/zip')
     ics_str = '\r\n'.join(ics)
     return Response(ics_str, mimetype='text/calendar', headers={
         'Content-Disposition': 'attachment; filename=project.ics'
@@ -308,6 +308,8 @@ def index():
                     save_path = os.path.join(UPLOAD_FOLDER, safe_name)
                     attachment.save(save_path)
                     attachment_filenames.append(safe_name)
+            if attachment_filenames:
+                print(f"[DEBUG] Saved attachments for task '{name}': {attachment_filenames}")
         # Handle multiple document links (comma or newline separated)
         document_links = request.form.get('document_link', '').strip()
         links_list = [l.strip() for l in document_links.replace('\r', '').replace('\n', ',').split(',') if l.strip()]
@@ -339,34 +341,55 @@ def index():
                     pass
         edit_idx = request.form.get('edit_idx', '').strip()
         if name and duration and auto_start:
-            new_task = {
-                'name': name,
-                'responsible': responsible,
-                'start': auto_start,
-                'duration': duration,
-                'depends_on': depends_on,
-                'resources': resources,
-                'notes': notes,
-                'pdf_page': pdf_page,
-                'status': status,
-                'percent_complete': percent_complete,
-                'parent': parent,
-                'milestone': milestone,
-                'attachments': attachment_filenames,
-                'document_links': links_list
-            }
-            # Fix: If editing, update the correct task by name (not just index), to avoid issues if table order changes
+            # If editing, merge new attachments with existing ones
             if edit_idx.isdigit() and int(edit_idx) < len(tasks):
-                # Try to match by name if possible
                 old_task = tasks[int(edit_idx)]
+                # Merge attachments: keep old ones, add new ones
+                merged_attachments = list(old_task.get('attachments', []))
+                for fname in attachment_filenames:
+                    if fname not in merged_attachments:
+                        merged_attachments.append(fname)
                 # If the name changed, update all children to point to the new name as parent
                 old_name = old_task.get('name')
                 if old_name and old_name != name:
                     for t in tasks:
                         if t.get('parent') == old_name:
                             t['parent'] = name
+                new_task = {
+                    'name': name,
+                    'responsible': responsible,
+                    'start': auto_start,
+                    'duration': duration,
+                    'depends_on': depends_on,
+                    'resources': resources,
+                    'notes': notes,
+                    'pdf_page': pdf_page,
+                    'status': status,
+                    'percent_complete': percent_complete,
+                    'parent': parent,
+                    'milestone': milestone,
+                    'attachments': merged_attachments,
+                    'document_links': links_list
+                }
                 tasks[int(edit_idx)] = new_task
             else:
+                # New task: always set attachments field (even if empty)
+                new_task = {
+                    'name': name,
+                    'responsible': responsible,
+                    'start': auto_start,
+                    'duration': duration,
+                    'depends_on': depends_on,
+                    'resources': resources,
+                    'notes': notes,
+                    'pdf_page': pdf_page,
+                    'status': status,
+                    'percent_complete': percent_complete,
+                    'parent': parent,
+                    'milestone': milestone,
+                    'attachments': attachment_filenames,
+                    'document_links': links_list
+                }
                 tasks.append(new_task)
         return redirect(url_for('index'))
     return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options)
