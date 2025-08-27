@@ -133,7 +133,7 @@ def gantt_chart():
         y_pos = list(range(len(parsed)))
         for i, t in enumerate(parsed):
             if t.get('is_milestone'):
-                ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='#555555', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
+                ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='#FF8200', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
             else:
                 ax.barh(i, t['duration'], left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
         ax.set_yticks(y_pos)
@@ -282,6 +282,8 @@ def index():
         resources = request.form.get('resources', '').strip()
         notes = request.form.get('notes', '').strip()
         pdf_page = request.form.get('pdf_page', '').strip()
+        status = request.form.get('status', 'Not Started').strip()
+        percent_complete = request.form.get('percent_complete', '0').strip()
         relation_type = request.form.get('relation_type', 'parent')
         parent = request.form.get('parent', '').strip() if relation_type == 'parent' else ''
         milestone = request.form.get('milestone', '').strip() if relation_type == 'milestone' else ''
@@ -308,6 +310,8 @@ def index():
                 'resources': resources,
                 'notes': notes,
                 'pdf_page': pdf_page,
+                'status': status,
+                'percent_complete': percent_complete,
                 'parent': parent,
                 'milestone': milestone
             }
