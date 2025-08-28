@@ -1,4 +1,3 @@
-
 # --- Imports ---
 import csv
 import os
@@ -9,15 +8,149 @@ matplotlib.use('Agg')  # Use non-GUI backend for server
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response
+from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response, jsonify
+import zipfile
 
-# --- App Setup ---
 app = Flask(__name__)
-app.secret_key = 'replace-this-with-a-strong-random-secret-key-2025'
+
+# --- Calendar View Route ---
+@app.route('/calendar')
+def calendar_view():
+    return render_template('calendar.html')
+
+# --- Kanban View Route ---
+@app.route('/kanban')
+def kanban_view():
+    return render_template('kanban.html', tasks=tasks)
+
+
+# --- Tasks JSON for Calendar & API ---
+@app.route('/tasks_json')
+def tasks_json():
+    # Return all fields for each task, including id and parent (by id)
+    return jsonify(tasks)
+
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 PDF_FILENAME = 'uploaded.pdf'
+
+TASKS_FILE = os.path.join(os.path.dirname(__file__), 'tasks.json')
 tasks = []
+next_task_id = 1
+
+# --- Delete Task ---
+@app.route('/delete_task', methods=['POST'])
+def delete_task():
+    data = request.json
+    idx = data.get('task_idx')
+    if idx is None:
+        return jsonify({'success': False, 'error': 'Missing task index'}), 400
+    try:
+        idx = int(idx)
+        if idx < 0 or idx >= len(tasks):
+            return jsonify({'success': False, 'error': 'Invalid task index'}), 400
+        # Remove attachments from disk
+        for fname in tasks[idx].get('attachments', []):
+            fpath = os.path.join(UPLOAD_FOLDER, fname)
+            if os.path.exists(fpath):
+                os.remove(fpath)
+                 # --- Calendar View Route ---
+        tasks.pop(idx)
+        save_tasks()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+
+# --- Persistent Storage Helpers ---
+def load_tasks():
+    global tasks, next_task_id
+    if os.path.exists(TASKS_FILE):
+        try:
+            with open(TASKS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    tasks.clear()
+                    max_id = 0
+                    for idx, t in enumerate(data):
+                        for k, default in [
+                            ('name', ''),
+                            ('responsible', ''),
+                            ('start', ''),
+                            ('duration', ''),
+                            ('depends_on', ''),
+                            ('resources', ''),
+                            ('notes', ''),
+                            ('pdf_page', ''),
+                            ('parent', None),
+                            ('status', 'Not Started'),
+                            ('percent_complete', '0'),
+                            ('milestone', ''),
+                            ('attachments', []),
+                            ('document_links', []),
+                        ]:
+                            if k not in t:
+                                t[k] = default
+                        # Assign unique id if missing
+                        if 'id' not in t:
+                            t['id'] = idx + 1
+                        max_id = max(max_id, t['id'])
+                        # Coerce attachments and document_links to lists if needed
+                        if not isinstance(t.get('attachments', []), list):
+                            if isinstance(t['attachments'], str) and t['attachments'].strip() == '':
+                                t['attachments'] = []
+                            elif isinstance(t['attachments'], str):
+                                t['attachments'] = [t['attachments']]
+                            else:
+                                t['attachments'] = list(t['attachments']) if t['attachments'] else []
+                        if not isinstance(t.get('document_links', []), list):
+                            if isinstance(t['document_links'], str) and t['document_links'].strip() == '':
+                                t['document_links'] = []
+                            elif isinstance(t['document_links'], str):
+                                t['document_links'] = [t['document_links']]
+                            else:
+                                t['document_links'] = list(t['document_links']) if t['document_links'] else []
+                    # Update parent field to use id, not name
+                    name_to_id = {t['name']: t['id'] for t in data}
+                    for t in data:
+                        if t.get('parent') and t['parent'] in name_to_id:
+                            t['parent'] = name_to_id[t['parent']]
+                    tasks.extend(data)
+                    next_task_id = max_id + 1
+        except Exception:
+            pass
+
+def save_tasks():
+    try:
+        with open(TASKS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(tasks, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+# --- Delete Attachment from Task ---
+@app.route('/delete_attachment', methods=['POST'])
+def delete_attachment():
+    data = request.json
+    task_idx = data.get('task_idx')
+    filename = data.get('filename')
+    if task_idx is None or filename is None:
+        return jsonify({'success': False, 'error': 'Missing parameters'}), 400
+    try:
+        task_idx = int(task_idx)
+        task = tasks[task_idx]
+        if 'attachments' in task and filename in task['attachments']:
+            task['attachments'].remove(filename)
+            # Remove file from disk if it exists
+            fpath = os.path.join(UPLOAD_FOLDER, filename)
+            if os.path.exists(fpath):
+                os.remove(fpath)
+            save_tasks()
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Attachment not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # --- Calendar export (iCalendar .ics) ---
 @app.route('/calendar_export')
@@ -119,75 +252,84 @@ def parse_tasks_for_gantt(tasks):
 
 @app.route('/gantt.png')
 def gantt_chart():
-    parsed = parse_tasks_for_gantt(tasks)
-    critical = compute_critical_path(tasks)
-    fig, ax = plt.subplots(figsize=(8, 4))
-    if not parsed:
-        ax.text(0.5, 0.5, 'No tasks to display', ha='center', va='center', fontsize=16, color='gray', transform=ax.transAxes)
-        ax.set_xlabel('Date')
-        fig.tight_layout()
-    else:
-        names = [t['name'] for t in parsed]
-        starts = [mdates.date2num(t['start']) for t in parsed]
-        durations = [t['duration'] for t in parsed]
-        y_pos = list(range(len(parsed)))
-        for i, t in enumerate(parsed):
-            if t.get('is_milestone'):
-                ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='#FF8200', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
-            else:
-                # Find the original task to get percent_complete
-                task_name = t['name'].lstrip()
-                orig_task = next((task for task in tasks if task['name'] == task_name), None)
-                try:
-                    percent = float(orig_task.get('percent_complete', 0)) if orig_task else 0
-                except Exception:
-                    percent = 0
-                percent = max(0, min(percent, 100))
-                dur = t['duration']
-                done_dur = dur * percent / 100.0
-                # Draw completed (orange) part
-                if done_dur > 0:
-                    ax.barh(i, done_dur, left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
-                # Draw remaining (gray) part
-                if done_dur < dur:
-                    ax.barh(i, dur - done_dur, left=starts[i] + done_dur, height=0.4, align='center', color='#555555', edgecolor='black')
-        ax.set_yticks(y_pos)
-        ax.set_yticklabels(names)
-        ax.set_xlabel('Date')
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        fig.autofmt_xdate()
-        ax.invert_yaxis()
-        # Draw parent-child arrows
-        name_to_info = {t['name'].lstrip(): (i, starts[i], durations[i]) for i, t in enumerate(parsed)}
-        for t in tasks:
-            parent = t.get('parent')
-            if parent:
-                child_name = t['name']
-                for i, pt in enumerate(parsed):
-                    if pt['name'].lstrip() == child_name:
-                        child_idx = i
-                        break
+    print("[DEBUG] Entered gantt_chart route")
+    try:
+        print("[DEBUG] Tasks before rendering Gantt chart:", json.dumps(tasks, indent=2, ensure_ascii=False))
+        parsed = parse_tasks_for_gantt(tasks)
+        critical = compute_critical_path(tasks)
+        fig, ax = plt.subplots(figsize=(24, 12))
+        plt.rcParams.update({'font.size': 20})
+        if not parsed:
+            ax.text(0.5, 0.5, 'No tasks to display', ha='center', va='center', fontsize=16, color='gray', transform=ax.transAxes)
+            ax.set_xlabel('Date')
+            fig.tight_layout()
+        else:
+            names = [t['name'] for t in parsed]
+            starts = [mdates.date2num(t['start']) for t in parsed]
+            durations = [t['duration'] for t in parsed]
+            y_pos = list(range(len(parsed)))
+            for i, t in enumerate(parsed):
+                if t.get('is_milestone'):
+                    ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='#FF8200', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
                 else:
-                    continue
-                for j, pt in enumerate(parsed):
-                    if pt['name'].lstrip() == parent:
-                        parent_idx = j
-                        break
-                else:
-                    continue
-                parent_y = parent_idx
-                child_y = child_idx
-                parent_end = starts[parent_idx] + durations[parent_idx]
-                child_start = starts[child_idx]
-                ax.annotate('', xy=(child_start, child_y), xytext=(parent_end, parent_y),
-                            arrowprops=dict(arrowstyle='->', color='blue', lw=1.5, shrinkA=5, shrinkB=5))
-        fig.tight_layout()
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
-    return Response(buf.getvalue(), mimetype='image/png')
+                    # Find the original task to get percent_complete
+                    task_name = t['name'].lstrip()
+                    orig_task = next((task for task in tasks if task['name'] == task_name), None)
+                    try:
+                        percent = float(orig_task.get('percent_complete', 0)) if orig_task else 0
+                    except Exception:
+                        percent = 0
+                    percent = max(0, min(percent, 100))
+                    dur = t['duration']
+                    done_dur = dur * percent / 100.0
+                    # Draw completed (orange) part
+                    if done_dur > 0:
+                        ax.barh(i, done_dur, left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
+                    # Draw remaining (gray) part
+                    if done_dur < dur:
+                        ax.barh(i, dur - done_dur, left=starts[i] + done_dur, height=0.4, align='center', color='#555555', edgecolor='black')
+            ax.set_yticks(y_pos)
+            ax.set_yticklabels(names)
+            ax.set_xlabel('Date')
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            fig.autofmt_xdate()
+            ax.invert_yaxis()
+            # Draw parent-child arrows
+            name_to_info = {t['name'].lstrip(): (i, starts[i], durations[i]) for i, t in enumerate(parsed)}
+            for t in tasks:
+                parent = t.get('parent')
+                if parent:
+                    child_name = t['name']
+                    for i, pt in enumerate(parsed):
+                        if pt['name'].lstrip() == child_name:
+                            child_idx = i
+                            break
+                    else:
+                        continue
+                    for j, pt in enumerate(parsed):
+                        if pt['name'].lstrip() == parent:
+                            parent_idx = j
+                            break
+                    else:
+                        continue
+                    parent_y = parent_idx
+                    child_y = child_idx
+                    parent_end = starts[parent_idx] + durations[parent_idx]
+                    child_start = starts[child_idx]
+                    ax.annotate('', xy=(child_start, child_y), xytext=(parent_end, parent_y),
+                                arrowprops=dict(arrowstyle='->', color='blue', lw=1.5, shrinkA=5, shrinkB=5))
+            fig.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        plt.close(fig)
+        buf.seek(0)
+        return Response(buf.getvalue(), mimetype='image/png')
+    except Exception as e:
+        print("[ERROR] Exception in gantt_chart:", str(e))
+        import traceback
+        traceback.print_exc()
+        return Response('Error rendering Gantt chart', mimetype='text/plain')
 
 @app.route('/gantt_export/<fmt>')
 def gantt_export(fmt):
@@ -264,6 +406,7 @@ def download_csv():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     global tasks
+    load_tasks()
     pdf_uploaded = os.path.exists(os.path.join(UPLOAD_FOLDER, PDF_FILENAME))
     parent_options = [('', 'None')] + [(t['name'], t['name']) for t in tasks]
     if request.method == 'POST':
@@ -279,27 +422,58 @@ def index():
                     data = json.load(f)
                     if isinstance(data, list):
                         tasks.clear()
-                        # Ensure all fields exist for each task
                         for t in data:
-                            for k in ['name','responsible','start','duration','depends_on','resources','notes','pdf_page','parent']:
-                                t.setdefault(k, '')
+                            for k, default in [
+                                ('name', ''),
+                                ('responsible', ''),
+                                ('start', ''),
+                                ('duration', ''),
+                                ('depends_on', ''),
+                                ('resources', ''),
+                                ('notes', ''),
+                                ('pdf_page', ''),
+                                ('parent', ''),
+                                ('status', 'Not Started'),
+                                ('percent_complete', '0'),
+                                ('milestone', ''),
+                                ('attachments', []),
+                                ('document_links', []),
+                            ]:
+                                if k not in t:
+                                    t[k] = default
+                            if not isinstance(t.get('attachments', []), list):
+                                if isinstance(t['attachments'], str) and t['attachments'].strip() == '':
+                                    t['attachments'] = []
+                                elif isinstance(t['attachments'], str):
+                                    t['attachments'] = [t['attachments']]
+                                else:
+                                    t['attachments'] = list(t['attachments']) if t['attachments'] else []
+                            if not isinstance(t.get('document_links', []), list):
+                                if isinstance(t['document_links'], str) and t['document_links'].strip() == '':
+                                    t['document_links'] = []
+                                elif isinstance(t['document_links'], str):
+                                    t['document_links'] = [t['document_links']]
+                                else:
+                                    t['document_links'] = list(t['document_links']) if t['document_links'] else []
                         tasks.extend(data)
+                        save_tasks()
                         flash('Project loaded!')
+                        load_tasks()
                 except Exception:
                     flash('Invalid project file.')
             return redirect(url_for('index'))
-        # Add new task from form
-        name = request.form.get('name', '').strip()
-        responsible = request.form.get('responsible', '').strip()
-        start = request.form.get('start', '').strip()
-        duration = request.form.get('duration', '').strip()
-        depends_on = request.form.get('depends_on', '').strip()
-        resources = request.form.get('resources', '').strip()
-        notes = request.form.get('notes', '').strip()
-        pdf_page = request.form.get('pdf_page', '').strip()
-        percent_complete = request.form.get('percent_complete', '0').strip()
-        # Handle multiple file uploads for task attachments
-        attachment_filenames = []
+                # Add new task from form
+            name = request.form.get('name', '').strip()
+            responsible = request.form.get('responsible', '').strip()
+            start = request.form.get('start', '').strip()
+            duration = request.form.get('duration', '').strip()
+            depends_on = request.form.get('depends_on', '').strip()
+            resources = request.form.get('resources', '').strip()
+            notes = request.form.get('notes', '').strip()
+            pdf_page = request.form.get('pdf_page', '').strip()
+            percent_complete = request.form.get('percent_complete', '0').strip()
+            # Handle multiple file uploads for task attachments
+            attachment_filenames = []
         if 'attachment' in request.files:
             files = request.files.getlist('attachment')
             for attachment in files:
@@ -325,8 +499,15 @@ def index():
         else:
             status = 'Not Started'
         relation_type = request.form.get('relation_type', 'parent')
-        parent = request.form.get('parent', '').strip() if relation_type == 'parent' else ''
+        parent_name = request.form.get('parent', '').strip() if relation_type == 'parent' else None
         milestone = request.form.get('milestone', '').strip() if relation_type == 'milestone' else ''
+        # Find parent id if parent_name is set
+        parent_id = None
+        if parent_name:
+            for t in tasks:
+                if t['name'] == parent_name:
+                    parent_id = t['id']
+                    break
         # If depends_on is set, automatically set start date to the day after the dependency ends
         auto_start = start
         if depends_on:
@@ -340,22 +521,24 @@ def index():
                 except Exception:
                     pass
         edit_idx = request.form.get('edit_idx', '').strip()
+        changed = False
         if name and duration and auto_start:
+            global next_task_id
             # If editing, merge new attachments with existing ones
             if edit_idx.isdigit() and int(edit_idx) < len(tasks):
                 old_task = tasks[int(edit_idx)]
-                # Merge attachments: keep old ones, add new ones
                 merged_attachments = list(old_task.get('attachments', []))
                 for fname in attachment_filenames:
                     if fname not in merged_attachments:
                         merged_attachments.append(fname)
-                # If the name changed, update all children to point to the new name as parent
-                old_name = old_task.get('name')
-                if old_name and old_name != name:
+                # If the name changed, update all children to point to the new id as parent
+                old_id = old_task.get('id')
+                if old_id:
                     for t in tasks:
-                        if t.get('parent') == old_name:
-                            t['parent'] = name
+                        if t.get('parent') == old_id:
+                            t['parent'] = old_id
                 new_task = {
+                    'id': old_task['id'],
                     'name': name,
                     'responsible': responsible,
                     'start': auto_start,
@@ -366,15 +549,17 @@ def index():
                     'pdf_page': pdf_page,
                     'status': status,
                     'percent_complete': percent_complete,
-                    'parent': parent,
+                    'parent': parent_id,
                     'milestone': milestone,
                     'attachments': merged_attachments,
                     'document_links': links_list
                 }
                 tasks[int(edit_idx)] = new_task
+                changed = True
             else:
                 # New task: always set attachments field (even if empty)
                 new_task = {
+                    'id': next_task_id,
                     'name': name,
                     'responsible': responsible,
                     'start': auto_start,
@@ -385,14 +570,20 @@ def index():
                     'pdf_page': pdf_page,
                     'status': status,
                     'percent_complete': percent_complete,
-                    'parent': parent,
+                    'parent': parent_id,
                     'milestone': milestone,
                     'attachments': attachment_filenames,
                     'document_links': links_list
                 }
                 tasks.append(new_task)
+                next_task_id += 1
+                changed = True
+        if changed:
+            save_tasks()
         return redirect(url_for('index'))
+    print("[DEBUG] Tasks before rendering index:", json.dumps(tasks, indent=2, ensure_ascii=False))
     return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options)
+    print("[DEBUG] Tasks before rendering Gantt chart:", json.dumps(tasks, indent=2, ensure_ascii=False))
 
 @app.route('/download_project')
 def download_project():
@@ -406,4 +597,5 @@ def serve_pdf():
     return send_from_directory(UPLOAD_FOLDER, PDF_FILENAME)
 
 if __name__ == '__main__':
+    load_tasks()
     app.run(debug=True)

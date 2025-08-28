@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Project Calendar</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+    <style>body { background: #f8f9fa; }</style>
+</head>
+<body>
+<div class="container my-4">
+    <h1 class="mb-4">Project Calendar</h1>
+    <a href="/" class="btn btn-secondary mb-3">Back to Dashboard</a>
+    <div id="calendar"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar');
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        height: 700,
+        events: function(fetchInfo, successCallback, failureCallback) {
+            fetch('/tasks_json')
+                .then(response => response.json())
+                .then(function(tasks) {
+                    const events = tasks.map(function(task) {
+                        return {
+                            id: task.id,
+                            title: task.name + (task.percent_complete ? ' (' + task.percent_complete + '%)' : ''),
+                            start: task.start,
+                            end: task.start,
+                            allDay: true,
+                            extendedProps: task
+                        };
+                    });
+                    successCallback(events);
+                });
+        },
+        eventClick: function(info) {
+            const t = info.event.extendedProps;
+            let details = `Task: ${info.event.title}\nStart: ${info.event.startStr}`;
+            if (t.responsible) details += `\nResponsible: ${t.responsible}`;
+            if (t.status) details += `\nStatus: ${t.status}`;
+            if (t.percent_complete) details += `\nProgress: ${t.percent_complete}%`;
+            if (t.attachments && t.attachments.length > 0) details += `\nAttachments: ${t.attachments.join(', ')}`;
+            if (t.pdf_page) details += `\nPDF Page: ${t.pdf_page}`;
+            if (t.parent) details += `\nSub-task of #${t.parent}`;
+            alert(details);
+        }
+    });
+    calendar.render();
+});
+</script>
+</body>
+</html>
