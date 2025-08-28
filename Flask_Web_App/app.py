@@ -22,6 +22,7 @@ app = Flask(__name__)
 def tasks_page():
     print("HIT /tasks route")
     load_tasks()
+    alert_message = None
     if request.method == 'POST':
         # Task creation or editing from form
         name = request.form.get('name', '').strip()
@@ -50,6 +51,29 @@ def tasks_page():
                     save_path = os.path.join(UPLOAD_FOLDER, safe_name)
                     attachment.save(save_path)
                     attachment_filenames.append(safe_name)
+
+        # Dependency enforcement: if depends_on is set, start must be after dependency's end
+        dep_task = None
+        dep_end_date = None
+        if depends_on:
+            dep_task = next((t for t in tasks if t['name'] == depends_on), None)
+            if dep_task and dep_task.get('start') and dep_task.get('duration'):
+                try:
+                    dep_start = datetime.strptime(dep_task['start'], '%Y-%m-%d')
+                    dep_duration = int(dep_task.get('duration', 1) or 1)
+                    dep_end_date = dep_start + timedelta(days=dep_duration)
+                    if start:
+                        this_start = datetime.strptime(start, '%Y-%m-%d')
+                        if this_start < dep_end_date:
+                            alert_message = f"Task '{name}' cannot start before its dependency '{depends_on}' is complete (must start on or after {dep_end_date.strftime('%Y-%m-%d')})."
+                except Exception:
+                    pass
+
+        if alert_message:
+            # Render page with alert, do not save
+            load_tasks()
+            return render_template('tasks.html', tasks=tasks, alert_message=alert_message)
+
         # If editing, update the existing task
         if edit_idx.isdigit() and int(edit_idx) < len(tasks):
             idx = int(edit_idx)
@@ -96,7 +120,7 @@ def tasks_page():
                 })
                 save_tasks()
         return redirect(url_for('tasks_page'))
-    return render_template('tasks.html', tasks=tasks)
+    return render_template('tasks.html', tasks=tasks, alert_message=alert_message)
 
 # --- iCalendar Export Route ---
 @app.route('/calendar_export_ics')
@@ -373,17 +397,17 @@ def parse_tasks_for_gantt(tasks):
     def collect(task, all_tasks, depth):
         try:
             start = datetime.strptime(task['start'], '%Y-%m-%d')
-            duration = int(task['duration'])
+            duration = int(task.get('duration', 1) or 1)
         except Exception:
             return
         is_milestone = bool(task.get('milestone'))
         all_tasks.append({'name': ('    ' * depth) + task['name'], 'start': start, 'duration': duration, 'is_milestone': is_milestone})
-        # Find children
-        children = [t for t in tasks if t.get('parent') == task['name']]
+        # Find children by name (not id)
+        children = [t for t in tasks if (t.get('parent') or '') == task['name']]
         for child in children:
             collect(child, all_tasks, depth+1)
-    # Find top-level tasks
-    top_level = [t for t in tasks if not t.get('parent')]
+    # Find top-level tasks (parent is empty, None, or 'None')
+    top_level = [t for t in tasks if not t.get('parent') or t.get('parent') in ('', None, 'None')]
     all_tasks = []
     for t in top_level:
         collect(t, all_tasks, 0)
@@ -414,7 +438,7 @@ def gantt_chart():
         else:
             names = [t['name'] for t in parsed]
             starts = [mdates.date2num(t['start']) for t in parsed]
-            durations = [t['duration'] for t in parsed]
+            durations = [int(t['duration']) if not isinstance(t['duration'], int) else t['duration'] for t in parsed]
             y_pos = list(range(len(parsed)))
             for i, t in enumerate(parsed):
                 if t.get('is_milestone'):
@@ -428,7 +452,7 @@ def gantt_chart():
                     except Exception:
                         percent = 0
                     percent = max(0, min(percent, 100))
-                    dur = t['duration']
+                    dur = int(t['duration']) if not isinstance(t['duration'], int) else t['duration']
                     done_dur = dur * percent / 100.0
                     # Draw completed (primary color) part
                     if done_dur > 0:
@@ -447,7 +471,7 @@ def gantt_chart():
             name_to_info = {t['name'].lstrip(): (i, starts[i], durations[i]) for i, t in enumerate(parsed)}
             for t in tasks:
                 parent = t.get('parent')
-                if parent:
+                if parent and parent not in ('', None, 'None'):
                     child_name = t['name']
                     for i, pt in enumerate(parsed):
                         if pt['name'].lstrip() == child_name:
@@ -467,6 +491,30 @@ def gantt_chart():
                     child_start = starts[child_idx]
                     ax.annotate('', xy=(child_start, child_y), xytext=(parent_end, parent_y),
                                 arrowprops=dict(arrowstyle='->', color='blue', lw=1.5, shrinkA=5, shrinkB=5))
+            # Draw dependency arrows (depends_on)
+            for t in tasks:
+                dep = t.get('depends_on')
+                if dep and dep not in ('', None, 'None'):
+                    child_name = t['name']
+                    dep_name = dep
+                    for i, pt in enumerate(parsed):
+                        if pt['name'].lstrip() == child_name:
+                            child_idx = i
+                            break
+                    else:
+                        continue
+                    for j, pt in enumerate(parsed):
+                        if pt['name'].lstrip() == dep_name:
+                            dep_idx = j
+                            break
+                    else:
+                        continue
+                    dep_y = dep_idx
+                    child_y = child_idx
+                    dep_end = starts[dep_idx] + durations[dep_idx]
+                    child_start = starts[child_idx]
+                    ax.annotate('', xy=(child_start, child_y), xytext=(dep_end, dep_y),
+                                arrowprops=dict(arrowstyle='->', color='red', lw=1.5, linestyle='dashed', shrinkA=5, shrinkB=5))
             fig.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format='png')

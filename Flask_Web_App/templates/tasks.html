@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
+    {% if alert_message %}
+    <div class="alert alert-danger" role="alert">
+        {{ alert_message }}
+    </div>
+    {% endif %}
 <div class="container my-4">
     <h2 class="mb-4">Tasks List & Creation</h2>
     <form method="post" enctype="multipart/form-data" class="row g-3 mb-4">
