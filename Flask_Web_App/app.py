@@ -1,3 +1,6 @@
+
+
+
 # --- Imports ---
 import csv
 import os
@@ -13,6 +16,34 @@ import zipfile
 import pytz
 
 app = Flask(__name__)
+
+# --- Tasks List and Creation Page ---
+@app.route('/tasks', methods=['GET', 'POST'])
+def tasks_page():
+    print("HIT /tasks route")
+    load_tasks()
+    if request.method == 'POST':
+        # Simple task creation from form
+        name = request.form.get('name', '').strip()
+        start = request.form.get('start', '').strip()
+        responsible = request.form.get('responsible', '').strip()
+        if name:
+            tasks.append({
+                'id': len(tasks) + 1,
+                'name': name,
+                'start': start,
+                'responsible': responsible,
+                'status': 'Not Started',
+                'percent_complete': 0,
+                'attachments': [],
+                'notes': '',
+                'milestone': '',
+                'color': '#4287f5',
+                'duration': 1
+            })
+            save_tasks()
+        return redirect(url_for('tasks_page'))
+    return render_template('tasks.html', tasks=tasks)
 
 # --- iCalendar Export Route ---
 @app.route('/calendar_export_ics')
@@ -57,20 +88,7 @@ def get_project_timeline_data(tasks):
     timeline_items = [item for item in timeline_items if item['date']]
     timeline_items.sort(key=lambda x: x['date'])
     return timeline_items
-# --- Imports ---
-import csv
-import os
-import io
-import json
-import matplotlib
-matplotlib.use('Agg')  # Use non-GUI backend for server
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response, jsonify
-import zipfile
 
-app = Flask(__name__)
 
 # --- Timeline Route (moved below app creation) ---
 @app.route('/timeline')

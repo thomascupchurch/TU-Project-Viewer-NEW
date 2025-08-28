@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container my-4">
+    <h2 class="mb-4">Tasks List & Creation</h2>
+    <form method="post" enctype="multipart/form-data" class="row g-3 mb-4">
+        <div class="col-md-3">
+            <input type="text" class="form-control" name="name" placeholder="Task Name" required>
+        </div>
+        <div class="col-md-2">
+            <input type="date" class="form-control" name="start" placeholder="Start Date">
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="responsible" placeholder="Responsible">
+        </div>
+        <div class="col-md-2">
+            <input type="number" class="form-control" name="duration" placeholder="Duration (days)">
+        </div>
+        <div class="col-md-2">
+            <input type="number" class="form-control" name="percent_complete" placeholder="% Complete" min="0" max="100">
+        </div>
+        <div class="col-md-1 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary w-100">Add Task</button>
+        </div>
+        <div class="col-12">
+            <a class="btn btn-link p-0" data-bs-toggle="collapse" href="#advancedFields" role="button" aria-expanded="false" aria-controls="advancedFields">
+                Show Advanced Fields
+            </a>
+        </div>
+        <div class="collapse" id="advancedFields">
+            <div class="card card-body mt-3">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="depends_on" placeholder="Depends On (Task Name)">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="resources" placeholder="Resources">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="notes" placeholder="Notes">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="pdf_page" placeholder="PDF Page">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="parent" placeholder="Parent Task Name">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="milestone" placeholder="Milestone">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="color" class="form-control form-control-color" name="color" value="#4287f5" title="Task Color">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="status" placeholder="Status (e.g. Not Started, In Progress, Completed)">
+                    </div>
+                    <div class="col-md-6">
+                        <input type="text" class="form-control" name="document_links" placeholder="Document Links (comma separated)">
+                    </div>
+                    <div class="col-md-6">
+                        <input type="file" class="form-control" name="attachments" multiple>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    <table class="table table-bordered table-hover">
+        <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Start</th>
+                <th>Responsible</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Milestone</th>
+                <th>Parent</th>
+                <th>Depends On</th>
+                <th>Color</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in tasks %}
+            <tr>
+                <td>{{ task.id }}</td>
+                <td>{{ task.name }}</td>
+                <td>{{ task.start }}</td>
+                <td>{{ task.responsible }}</td>
+                <td>{{ task.duration }}</td>
+                <td>{{ task.status }}</td>
+                <td>{{ task.percent_complete }}%</td>
+                <td>{{ task.milestone }}</td>
+                <td>{{ task.parent }}</td>
+                <td>{{ task.depends_on }}</td>
+                <td><span style="background:{{ task.color }};padding:2px 10px;border-radius:4px;display:inline-block;"></span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
