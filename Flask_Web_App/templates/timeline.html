@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4" style="color: #FF8200; font-weight: bold; letter-spacing: 1px;">Project Timeline</h2>
+    <div id="project-timeline" class="my-5">
+        {% if timeline_items and timeline_items|length > 0 %}
+        <div class="d-flex flex-row align-items-center justify-content-between" style="position:relative; min-height:120px;">
+            <svg width="100%" height="60" style="position:absolute; top:30px; left:0; z-index:0;">
+                <line x1="2%" y1="30" x2="98%" y2="30" stroke="#FF8200" stroke-width="6" stroke-linecap="round" />
+            </svg>
+            {% set n = timeline_items|length %}
+            {% for item in timeline_items %}
+                {% set idx = loop.index0 %}
+                {% set left = (100/(n-1))*idx if n > 1 else 50 %}
+                <div style="position:relative; min-width:120px; text-align:center; z-index:1; left:calc({{left}}% - 60px);">
+                    <div style="display:inline-block;">
+                        <div style="width:32px; height:32px; margin:0 auto; border-radius:50%; background:{{ '#FF8200' if item.type=='milestone' else '#4287f5' }}; border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.08); color:#fff; font-weight:bold; font-size:1.2em; display:flex; align-items:center; justify-content:center;">
+                            {% if item.type=='milestone' %}
+                                <span title="Milestone">★</span>
+                            {% else %}
+                                <span title="Phase">●</span>
+                            {% endif %}
+                        </div>
+                        <div style="margin-top:8px; font-size:1em; font-weight:600; color:#333;">{{ item.name }}</div>
+                        <div style="font-size:0.95em; color:#888;">{{ item.date }}</div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        <div class="d-flex flex-row justify-content-between mt-2" style="font-size:0.95em; color:#888;">
+            {% for item in timeline_items %}
+                <div style="min-width:120px; text-align:center;">{{ item.date }}</div>
+            {% endfor %}
+        </div>
+        {% else %}
+            <div class="alert alert-info text-center">
+                No milestones or phases found. Mark tasks as milestones or set their status to In Progress/Completed to show them here.
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

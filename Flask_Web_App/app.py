@@ -1,3 +1,24 @@
+# --- Project Timeline Helper ---
+def get_project_timeline_data(tasks):
+    # Extract milestones and phases (tasks with 'milestone' or status 'Completed' or 'In Progress')
+    timeline_items = []
+    for t in tasks:
+        # Treat as milestone if 'milestone' field is set or if marked as milestone in type
+        if t.get('milestone') or t.get('status') == 'Completed' or t.get('status') == 'In Progress':
+            timeline_items.append({
+                'name': t.get('milestone') or t.get('name'),
+                'date': t.get('start'),
+                'type': 'milestone' if t.get('milestone') else 'phase',
+            })
+    # Sort by date
+    timeline_items = [item for item in timeline_items if item['date']]
+    timeline_items.sort(key=lambda x: x['date'])
+    return timeline_items
+@app.route('/timeline')
+def timeline_page():
+    load_tasks()
+    timeline_items = get_project_timeline_data(tasks)
+    return render_template('timeline.html', tasks=tasks, timeline_items=timeline_items)
 # --- Imports ---
 import csv
 import os
