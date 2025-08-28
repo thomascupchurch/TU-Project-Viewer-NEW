@@ -1,180 +1,347 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Project Planner Web</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<style>
-/* Custom orange progress bar for percent complete */
-.progress-bar.progress-bar-orange {
-    background-color: #FF8200 !important;
-    color: #fff !important;
-    border: 1px solid #FF8200 !important;
-}
-</style>
-<style>
-/* Force orange color for percent complete progress bars in the task table */
-.progress-bar[data-orange] {
-    background-color: #FF8200 !important;
-    color: #fff;
-}
-</style>
-<body>
-    <div class="container-fluid my-4" style="height: 100vh; max-width: 100vw; overflow: hidden;">
-        <h1 class="mb-4">TU's Project Hub</h1>
-        <div class="d-flex flex-row align-items-stretch" style="height: calc(100vh - 4rem); min-height: 600px;">
-                <div class="mb-4">
-                    <a href="/calendar" class="btn btn-outline-primary me-2">Calendar View</a>
-                    <a href="/kanban" class="btn btn-outline-success me-2">Kanban Board</a>
-                    <a href="/gantt" class="btn btn-outline-warning">Gantt Chart</a>
-                </div>
-            <!-- Left: PDF viewer (50%) -->
-            <div class="d-flex flex-column" style="flex: 1 1 0; min-width: 0; max-width: 50vw; height: 100%;">
-                <div class="mb-3">
-                    <h4>PDF Upload & Viewer</h4>
-                    <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
-                        <input type="file" class="form-control" name="pdf" accept="application/pdf" required>
-                        <button type="submit" class="btn btn-primary">Upload PDF</button>
-                    </form>
-                </div>
-                <div class="flex-grow-1 border p-2 bg-light d-flex flex-column" style="min-height: 0; height: 100%;">
-                    {% if pdf_uploaded %}
-                        <iframe id="pdfjs-viewer" src="/static/pdfjs/web/viewer.html?file=/pdf" width="100%" height="100%" style="border:1px solid #888; min-height: 0; height: 100%;"></iframe>
-                                        <input type="file" class="form-control" name="project_upload" accept="application/json" required>
-                        <p class="text-muted">No PDF uploaded yet.</p>
-                    {% endif %}
-                </div>
+{% extends "base.html" %}
+{% block content %}
+    <div class="d-flex flex-row align-items-stretch" style="height: calc(100vh - 4rem); min-height: 600px;">
+        <!-- Left: PDF viewer (50%) -->
+        <div class="d-flex flex-column" style="flex: 1 1 0; min-width: 0; max-width: 50vw; height: 100%;">
+            <div class="mb-3">
+                <h4>PDF Upload & Viewer</h4>
+                <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
+                    <input type="file" class="form-control" name="pdf" accept="application/pdf" required>
+                    <button type="submit" class="btn btn-primary">Upload PDF</button>
+                </form>
             </div>
-            <!-- Right: Tasks and Gantt chart (50%) -->
-            <div class="d-flex flex-column" style="flex: 1 1 0; min-width: 0; max-width: 50vw; height: 100%;">
-                <div class="mb-3">
-                    <h4>Project Save/Load</h4>
-                    <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
-                        <input type="file" class="form-control" name="project_upload" accept="application/json" required>
-                        <button type="submit" class="btn btn-secondary">Load Project</button>
-                    </form>
-                    <a href="/download_project" class="btn btn-warning fw-bold me-2" title="Save your project as a JSON file for backup or sharing.">Save Project (Download as JSON)</a>
-                    <a href="/download_csv" class="btn btn-info">Export CSV</a>
-                </div>
-                <div class="mb-3 d-flex flex-column flex-grow-1" style="min-height: 0; height: 100%;">
-                    <div class="mb-4 p-3 bg-white border rounded shadow-sm" style="background: #fffbe6;">
-                        <h2 class="mb-3 text-center" style="color: #FF8200; font-weight: bold; letter-spacing: 1px;">Project Timeline</h2>
-                        <div class="alert alert-info text-center" style="font-size:1.1em;">
-                            <strong>Project Timeline coming soon:</strong> This section will show a true project-management-style timeline with milestones, dependencies, and key events.
-                        </div>
+            <div class="flex-grow-1 border p-2 bg-light d-flex flex-column" style="min-height: 0; height: 100%;">
+                {% if pdf_uploaded %}
+                    <iframe id="pdfjs-viewer" src="/static/pdfjs/web/viewer.html?file=/pdf" width="100%" height="100%" style="border:1px solid #888; min-height: 0; height: 100%;"></iframe>
+                                    <input type="file" class="form-control" name="project_upload" accept="application/json" required>
+                    <p class="text-muted">No PDF uploaded yet.</p>
+                {% endif %}
+            </div>
+        </div>
+        <!-- Right: Tasks and Gantt chart (50%) -->
+        <div class="d-flex flex-column" style="flex: 1 1 0; min-width: 0; max-width: 50vw; height: 100%;">
+            <div class="mb-3">
+                <h4>Project Save/Load</h4>
+                <form method="post" enctype="multipart/form-data" class="mb-2 d-flex align-items-center gap-2">
+                    <input type="file" class="form-control" name="project_upload" accept="application/json" required>
+                    <button type="submit" class="btn btn-secondary">Load Project</button>
+                </form>
+                <a href="/download_project" class="btn btn-warning fw-bold me-2" title="Save your project as a JSON file for backup or sharing.">Save Project (Download as JSON)</a>
+                <a href="/download_csv" class="btn btn-info">Export CSV</a>
+            </div>
+            <div class="mb-3 d-flex flex-column flex-grow-1" style="min-height: 0; height: 100%;">
+                <div class="mb-4 p-3 bg-white border rounded shadow-sm" style="background: #fffbe6;">
+                    <h2 class="mb-3 text-center" style="color: #FF8200; font-weight: bold; letter-spacing: 1px;">Project Timeline</h2>
+                    <div class="alert alert-info text-center" style="font-size:1.1em;">
+                        <strong>Project Timeline coming soon:</strong> This section will show a true project-management-style timeline with milestones, dependencies, and key events.
                     </div>
-                    <h4>Tasks</h4>
-                    <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end" id="task-form">
-                            <input type="hidden" name="edit_idx" id="edit_idx" value="">
-                            <!-- Row 1: Core fields -->
-                            <div class="row g-2">
-                                <div class="col-md-3 col-12 mb-1 mb-md-0">
-                                    <input type="text" class="form-control" name="name" placeholder="Task name" required>
-                                </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="text" class="form-control" name="responsible" placeholder="Responsible" required>
-                                </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="date" class="form-control" name="start" required>
-                                </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="number" class="form-control" name="duration" placeholder="Duration (days)" min="1" required>
-                                </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="color" class="form-control form-control-color" name="color" value="#4287f5" title="Task Color">
-                                </div>
-                                <div class="col-md-1 col-6 mb-1 mb-md-0">
-                                    <input type="number" class="form-control" name="percent_complete" placeholder="%" min="0" max="100" value="0">
-                                </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <select class="form-select" name="status" id="status">
-                                        <option value="Not Started" selected>Status: Not Started</option>
-                                        <option value="In Progress">Status: In Progress</option>
-                                        <option value="Completed">Status: Completed</option>
+                </div>
+                <h4>Tasks</h4>
+                <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end" id="task-form">
+                        <input type="hidden" name="edit_idx" id="edit_idx" value="">
+                        <!-- Row 1: Core fields -->
+                        <div class="row g-2">
+                            <div class="col-md-3 col-12 mb-1 mb-md-0">
+                                <input type="text" class="form-control" name="name" placeholder="Task name" required>
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="text" class="form-control" name="responsible" placeholder="Responsible" required>
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="date" class="form-control" name="start" required>
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="number" class="form-control" name="duration" placeholder="Duration (days)" min="1" required>
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="color" class="form-control form-control-color" name="color" value="#4287f5" title="Task Color">
+                            </div>
+                            <div class="col-md-1 col-6 mb-1 mb-md-0">
+                                <input type="number" class="form-control" name="percent_complete" placeholder="%" min="0" max="100" value="0">
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <select class="form-select" name="status" id="status">
+                                    <option value="Not Started" selected>Status: Not Started</option>
+                                    <option value="In Progress">Status: In Progress</option>
+                                    <option value="Completed">Status: Completed</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 col-12">
+                                <div class="input-group">
+                                    <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
+                                        <option value="parent" selected>Parent</option>
+                                        <option value="milestone">Milestone</option>
                                     </select>
-                                </div>
-                                <div class="col-md-3 col-12">
-                                    <div class="input-group">
-                                        <select class="form-select" name="relation_type" id="relation_type" onchange="toggleRelationFields()">
-                                            <option value="parent" selected>Parent</option>
-                                            <option value="milestone">Milestone</option>
-                                        </select>
-                                        <select class="form-select" name="parent" id="parent_select">
-                                            {% for value, label in parent_options %}
-                                                <option value="{{ value }}">{{ label }}</option>
-                                            {% endfor %}
-                                        </select>
-                                        <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
-                                    </div>
-                                </div>
-                                <div class="col-md-1 col-12 mb-0 mb-md-0 d-flex align-items-end" style="margin-bottom:0;">
-                                    <button type="submit" class="btn btn-primary w-100">Add/Save</button>
+                                    <select class="form-select" name="parent" id="parent_select">
+                                        {% for value, label in parent_options %}
+                                            <option value="{{ value }}">{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input type="text" class="form-control d-none" name="milestone" id="milestone_input" placeholder="Milestone name">
                                 </div>
                             </div>
-                            <!-- Row 2: Optional/advanced fields -->
-                            <div class="row g-2 mt-0" style="margin-top:0; padding-top:0;">
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="text" class="form-control" name="depends_on" placeholder="Depends on">
+                            <div class="col-md-1 col-12 mb-0 mb-md-0 d-flex align-items-end" style="margin-bottom:0;">
+                                <button type="submit" class="btn btn-primary w-100">Add/Save</button>
+                            </div>
+                        </div>
+                        <!-- Row 2: Optional/advanced fields -->
+                        <div class="row g-2 mt-0" style="margin-top:0; padding-top:0;">
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="text" class="form-control" name="depends_on" placeholder="Depends on">
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="text" class="form-control" name="resources" placeholder="Resources">
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="text" class="form-control" name="notes" placeholder="Notes">
+                            </div>
+                            <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page" min="1">
+                            </div>
+                            <div class="col-md-2 col-12 mb-1 mb-md-0">
+                                <label class="form-label mb-0" for="attachment">Attachments</label>
+                                <div id="attachment-drop-area" class="border rounded p-1 bg-light" style="min-height: 40px; position: relative;">
+                                    <input type="file" class="form-control" name="attachment" id="attachment" multiple style="position:relative; z-index:2; opacity:1;">
+                                    <div id="attachment-drop-hint" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;z-index:3;background:rgba(255,130,0,0.1);color:#FF8200;font-weight:bold;pointer-events:none;">Drop files here</div>
                                 </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="text" class="form-control" name="resources" placeholder="Resources">
-                                </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="text" class="form-control" name="notes" placeholder="Notes">
-                                </div>
-                                <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="number" class="form-control" name="pdf_page" placeholder="PDF Page" min="1">
-                                </div>
-                                <div class="col-md-2 col-12 mb-1 mb-md-0">
-                                    <label class="form-label mb-0" for="attachment">Attachments</label>
-                                    <div id="attachment-drop-area" class="border rounded p-1 bg-light" style="min-height: 40px; position: relative;">
-                                        <input type="file" class="form-control" name="attachment" id="attachment" multiple style="position:relative; z-index:2; opacity:1;">
-                                        <div id="attachment-drop-hint" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;align-items:center;justify-content:center;z-index:3;background:rgba(255,130,0,0.1);color:#FF8200;font-weight:bold;pointer-events:none;">Drop files here</div>
-                                    </div>
-            </div>
+                            </div>
+                            <div class="col-md-2 col-12 mb-1 mb-md-0">
+                                <label class="form-label mb-0" for="document_link">Document Links<br><span class="text-muted" style="font-size:0.9em;">(comma or newline separated)</span></label>
+                                <textarea class="form-control" name="document_link" id="document_link" rows="1" placeholder="https://drive.google.com/..., https://dropbox.com/..." style="min-width: 120px;"></textarea>
+                            </div>
+                        </div>
+                    </form>
+                    <div class="flex-grow-1 d-flex flex-column" style="min-height: 0; height: 100%;">
+                        <div style="flex: 1 1 0; min-height: 0; overflow-y: auto;">
+                            <table class="table table-bordered table-striped table-sm mt-1" style="font-size: 0.85em;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Responsible</th>
+                                        <th>Start Date</th>
+                                        <th>Duration (days)</th>
+                                        <th>Depends On</th>
+                                        <th>Resources</th>
+                                        <th>Notes</th>
+                                        <th>PDF Page</th>
+                                        <th>Status</th>
+                                        <th>% Complete</th>
+                                        <th>Parent</th>
+                                        <th>Attachments</th>
+                                        <th>Links</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                {% if tasks %}
+                                    {% for task in tasks %}
+                                    <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
+                                        <td style="white-space: pre;">{{ task.name }}</td>
+                                        <td>{{ task.responsible }}</td>
+                                        <td>{{ task.start }}</td>
+                                        <td>{{ task.duration }}</td>
+                                        <td>{{ task.depends_on }}</td>
+                                        <td>{{ task.resources }}</td>
+                                        <td>{{ task.notes }}</td>
+                                        <td>{{ task.pdf_page }}</td>
+                                        <td>{{ task.status|default('Not Started') }}</td>
+                                        <td>
+                                            <div class="progress" style="height: 20px;">
+                                                {# Ensure percent_complete is always an integer between 0 and 100 #}
+                                                {% set pct = (task.percent_complete|default('0')|int) %}
+                                                {% if pct < 0 %}{% set pct = 0 %}{% endif %}
+                                                {% if pct > 100 %}{% set pct = 100 %}{% endif %}
+                                                <div class="progress-bar progress-bar-orange" role="progressbar" style="{{ 'width: %d%%;' % pct }}" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">{{ pct }}%</div>
+                                            </div>
+                                        </td>
+                                        <td>{{ task.parent }}</td>
+                                        <td>
+                                            {% if task.attachments and task.attachments|length > 0 %}
+                                                <div class="d-flex flex-wrap gap-1 align-items-center">
+                                                {% for fname in task.attachments %}
+                                                    <div class="d-inline-block position-relative me-1 mb-1" style="max-width: 90px;">
+                                                        {% set ext = fname.split('.')[-1]|lower %}
+                                                        {% if ext in ['jpg','jpeg','png','gif','bmp','webp'] %}
+                                                            <a href="/static/uploads/{{ fname }}" target="_blank">
+                                                                <img src="/static/uploads/{{ fname }}" alt="{{ fname }}" style="max-width:70px; max-height:50px; border:1px solid #ccc; border-radius:3px;">
+                                                            </a>
+                                                        {% elif ext == 'pdf' %}
+                                                            <a href="/static/uploads/{{ fname }}" target="_blank" title="Open PDF"><img src="https://cdn.jsdelivr.net/gh/thomascupchurch/pdf-icon@main/pdf-icon.png" alt="PDF" style="width:24px; vertical-align:middle;"> {{ fname }}</a>
+                                                        {% else %}
+                                                            <a href="/static/uploads/{{ fname }}" target="_blank">{{ fname }}</a>
+                                                        {% endif %}
+                                                        <button type="button" class="btn btn-sm btn-danger btn-delete-attachment position-absolute top-0 end-0" data-task-idx="{{ loop.index0 }}" data-fname="{{ fname }}" title="Delete attachment" style="padding:0 4px; font-size:0.9em; line-height:1;">&times;</button>
+                                                    </div>
+                                                {% endfor %}
+                                                </div>
+                                            {% else %}
+                                                <span class="text-muted">&mdash;</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if task.document_links %}
+                                                {% for link in task.document_links %}
+                                                    <a href="{{ link }}" target="_blank">[Link {{ loop.index }}]</a>{% if not loop.last %}, {% endif %}
+                                                {% endfor %}
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
+                                            <button type="button" class="btn btn-sm btn-outline-danger ms-1 delete-task-btn" data-task-idx="{{ loop.index0 }}">Delete</button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr><td colspan="14" class="text-center text-muted">No tasks yet.</td></tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Project Timeline moved and emphasized above -->
+                </div>
 <script>
-// Drag-and-drop for attachments
+// Delete attachment AJAX
 document.addEventListener('DOMContentLoaded', function() {
-    const dropArea = document.getElementById('attachment-drop-area');
-    const fileInput = document.getElementById('attachment');
-    const dropHint = document.getElementById('attachment-drop-hint');
-    if (dropArea && fileInput && dropHint) {
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropArea.addEventListener(eventName, function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                dropHint.style.display = 'flex';
-            });
-        });
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                dropHint.style.display = 'none';
-            });
-        });
-        dropArea.addEventListener('drop', function(e) {
-            e.preventDefault();
+    document.querySelectorAll('.btn-delete-attachment').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
             e.stopPropagation();
-            dropHint.style.display = 'none';
-            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                // Merge dropped files with current file input
-                const dt = new DataTransfer();
-                // Add existing files
-                for (let i = 0; i < fileInput.files.length; i++) {
-                    dt.items.add(fileInput.files[i]);
+            if (!confirm('Delete this attachment?')) return;
+            const taskIdx = btn.getAttribute('data-task-idx');
+            const fname = btn.getAttribute('data-fname');
+            fetch('/delete_attachment', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({task_idx: taskIdx, filename: fname})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    // Remove the attachment visually
+                    btn.parentElement.remove();
+                } else {
+                    alert('Failed to delete attachment: ' + (data.error || 'Unknown error'));
                 }
-                // Add dropped files
-                for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                    dt.items.add(e.dataTransfer.files[i]);
-                }
-                fileInput.files = dt.files;
-            }
+            });
         });
-    }
+    });
+    // Delete task AJAX
+    document.querySelectorAll('.delete-task-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (!confirm('Delete this task?')) return;
+            const taskIdx = btn.getAttribute('data-task-idx');
+            fetch('/delete_task', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({task_idx: taskIdx})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    // Remove the task row visually
+                    const row = btn.closest('tr');
+                    if (row) row.remove();
+                } else {
+                    alert('Failed to delete task: ' + (data.error || 'Unknown error'));
+                }
+            });
+        });
+    });
 });
 </script>
+
+
+<script>
+// Show/hide parent or milestone input based on selection
+function toggleRelationFields() {
+    const type = document.getElementById('relation_type').value;
+    const parentSel = document.getElementById('parent_select');
+    const milestoneInp = document.getElementById('milestone_input');
+    if (type === 'parent') {
+        parentSel.classList.remove('d-none');
+        milestoneInp.classList.add('d-none');
+    } else {
+        parentSel.classList.add('d-none');
+        milestoneInp.classList.remove('d-none');
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    toggleRelationFields();
+    // Edit button logic: load task data into form
+    document.querySelectorAll('.edit-task-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const idx = btn.getAttribute('data-task-idx');
+            const row = btn.closest('tr');
+            const cells = row.querySelectorAll('td');
+            document.querySelector('input[name="name"]').value = cells[0].innerText.trim();
+            document.querySelector('input[name="responsible"]').value = cells[1].innerText.trim();
+            document.querySelector('input[name="start"]').value = cells[2].innerText.trim();
+            document.querySelector('input[name="duration"]').value = cells[3].innerText.trim();
+            document.querySelector('input[name="depends_on"]').value = cells[4].innerText.trim();
+            document.querySelector('input[name="resources"]').value = cells[5].innerText.trim();
+            document.querySelector('input[name="notes"]').value = cells[6].innerText.trim();
+            document.querySelector('input[name="pdf_page"]').value = cells[7].innerText.trim();
+            document.getElementById('status').value = cells[8].innerText.trim() || 'Not Started';
+            // Extract percent from progress bar text (e.g., '45%')
+            let percentText = cells[9].innerText.trim();
+            let percentValue = 0;
+            if (percentText.endsWith('%')) {
+                percentValue = parseInt(percentText.replace('%','').trim()) || 0;
+            } else {
+                percentValue = parseInt(percentText) || 0;
+            }
+            document.querySelector('input[name="percent_complete"]').value = percentValue;
+            // Handle parent/milestone
+            const parentVal = cells[10].innerText.trim();
+            if (parentVal && parentVal !== 'None') {
+                document.getElementById('relation_type').value = 'parent';
+                toggleRelationFields();
+                document.getElementById('parent_select').value = parentVal;
+                document.getElementById('milestone_input').value = '';
+            } else {
+                document.getElementById('relation_type').value = 'milestone';
+                toggleRelationFields();
+                document.getElementById('milestone_input').value = document.querySelector('input[name="name"]').value;
+                document.getElementById('parent_select').value = '';
+            }
+            document.getElementById('edit_idx').value = idx;
+        });
+    });
+    // PDF click-to-jump logic
+    document.querySelectorAll('.task-row').forEach(function(row) {
+        row.addEventListener('click', function(e) {
+            // Prevent click if edit button is clicked
+            if (e.target.classList.contains('edit-task-btn')) return;
+            const page = row.getAttribute('data-pdf-page');
+            if (page && !isNaN(page) && Number(page) > 0) {
+                const iframe = document.getElementById('pdfjs-viewer');
+                if (iframe) {
+                    let src = iframe.getAttribute('src') || '';
+                    src = src.replace(/#page=\d+/, '');
+                    src = src.split('#')[0];
+                    src += '#page=' + page;
+                    iframe.setAttribute('src', src);
+                }
+            }
+        });
+    });
+    // Gantt chart zoom controls
+    document.querySelectorAll('.gantt-zoom').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const zoom = btn.getAttribute('data-zoom');
+            fetch(`/set_gantt_zoom/${zoom}`)
+                .then(() => {
+                    // Reload Gantt chart image
+                    document.querySelector('img[alt="Gantt Chart"]').src = `/gantt.png?${Date.now()}`;
+                });
+        });
+    });
+});
+</script>
+            </div>
+        </div>
+    </div>
+{% endblock %}
                                 <div class="col-md-2 col-12 mb-1 mb-md-0">
                                     <label class="form-label mb-0" for="document_link">Document Links<br><span class="text-muted" style="font-size:0.9em;">(comma or newline separated)</span></label>
                                     <textarea class="form-control" name="document_link" id="document_link" rows="1" placeholder="https://drive.google.com/..., https://dropbox.com/..." style="min-width: 120px;"></textarea>
