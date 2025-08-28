@@ -123,10 +123,12 @@ def load_tasks():
 
 def save_tasks():
     try:
+        print(f"[DEBUG] save_tasks() called. Saving {len(tasks)} tasks to {TASKS_FILE}")
         with open(TASKS_FILE, 'w', encoding='utf-8') as f:
             json.dump(tasks, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+        print(f"[DEBUG] save_tasks() wrote file successfully.")
+    except Exception as e:
+        print(f"[DEBUG] save_tasks() failed: {e}")
 
 # --- Delete Attachment from Task ---
 @app.route('/delete_attachment', methods=['POST'])
@@ -249,6 +251,11 @@ def parse_tasks_for_gantt(tasks):
     for t in top_level:
         collect(t, all_tasks, 0)
     return all_tasks
+
+@app.route('/gantt')
+def gantt_page():
+    load_tasks()
+    return render_template('gantt.html', tasks=tasks)
 
 @app.route('/gantt.png')
 def gantt_chart():
@@ -410,70 +417,87 @@ def index():
     pdf_uploaded = os.path.exists(os.path.join(UPLOAD_FOLDER, PDF_FILENAME))
     parent_options = [('', 'None')] + [(t['name'], t['name']) for t in tasks]
     if request.method == 'POST':
+        print("[DEBUG] POST request received at index route.")
+        print(f"[DEBUG] request.files: {request.files}")
+        print(f"[DEBUG] request.form: {request.form}")
         if 'pdf' in request.files:
+            print("[DEBUG] Entered PDF upload branch.")
             pdf = request.files['pdf']
             if pdf and pdf.filename.lower().endswith('.pdf'):
                 pdf.save(os.path.join(UPLOAD_FOLDER, PDF_FILENAME))
             return redirect(url_for('index'))
         if 'project_upload' in request.files:
+            print("[DEBUG] Entered project_upload branch.")
             f = request.files['project_upload']
-            if f and f.filename.lower().endswith('.json'):
-                try:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        tasks.clear()
-                        for t in data:
-                            for k, default in [
-                                ('name', ''),
-                                ('responsible', ''),
-                                ('start', ''),
-                                ('duration', ''),
-                                ('depends_on', ''),
-                                ('resources', ''),
-                                ('notes', ''),
-                                ('pdf_page', ''),
-                                ('parent', ''),
-                                ('status', 'Not Started'),
-                                ('percent_complete', '0'),
-                                ('milestone', ''),
-                                ('attachments', []),
-                                ('document_links', []),
-                            ]:
-                                if k not in t:
-                                    t[k] = default
-                            if not isinstance(t.get('attachments', []), list):
-                                if isinstance(t['attachments'], str) and t['attachments'].strip() == '':
-                                    t['attachments'] = []
-                                elif isinstance(t['attachments'], str):
-                                    t['attachments'] = [t['attachments']]
-                                else:
-                                    t['attachments'] = list(t['attachments']) if t['attachments'] else []
-                            if not isinstance(t.get('document_links', []), list):
-                                if isinstance(t['document_links'], str) and t['document_links'].strip() == '':
-                                    t['document_links'] = []
-                                elif isinstance(t['document_links'], str):
-                                    t['document_links'] = [t['document_links']]
-                                else:
-                                    t['document_links'] = list(t['document_links']) if t['document_links'] else []
-                        tasks.extend(data)
-                        save_tasks()
-                        flash('Project loaded!')
-                        load_tasks()
-                except Exception:
-                    flash('Invalid project file.')
-            return redirect(url_for('index'))
+            if request.method == 'POST':
+                if 'pdf' in request.files:
+                    print("[DEBUG] Entered nested PDF upload branch.")
+                    pdf = request.files['pdf']
+                    if pdf and pdf.filename.lower().endswith('.pdf'):
+                        pdf.save(os.path.join(UPLOAD_FOLDER, PDF_FILENAME))
+                    return redirect(url_for('index'))
+                if 'project_upload' in request.files:
+                    print("[DEBUG] Entered nested project_upload branch.")
+                    f = request.files['project_upload']
+                    if f and f.filename.lower().endswith('.json'):
+                        try:
+                            data = json.load(f)
+                            if isinstance(data, list):
+                                tasks.clear()
+                                for t in data:
+                                    for k, default in [
+                                        ('name', ''),
+                                        ('responsible', ''),
+                                        ('start', ''),
+                                        ('duration', ''),
+                                        ('depends_on', ''),
+                                        ('resources', ''),
+                                        ('notes', ''),
+                                        ('pdf_page', ''),
+                                        ('parent', ''),
+                                        ('status', 'Not Started'),
+                                        ('percent_complete', '0'),
+                                        ('milestone', ''),
+                                        ('attachments', []),
+                                        ('document_links', []),
+                                    ]:
+                                        if k not in t:
+                                            t[k] = default
+                                    if not isinstance(t.get('attachments', []), list):
+                                        if isinstance(t['attachments'], str) and t['attachments'].strip() == '':
+                                            t['attachments'] = []
+                                        elif isinstance(t['attachments'], str):
+                                            t['attachments'] = [t['attachments']]
+                                        else:
+                                            t['attachments'] = list(t['attachments']) if t['attachments'] else []
+                                    if not isinstance(t.get('document_links', []), list):
+                                        if isinstance(t['document_links'], str) and t['document_links'].strip() == '':
+                                            t['document_links'] = []
+                                        elif isinstance(t['document_links'], str):
+                                            t['document_links'] = [t['document_links']]
+                                        else:
+                                            t['document_links'] = list(t['document_links']) if t['document_links'] else []
+                                tasks.extend(data)
+                                save_tasks()
+                                flash('Project loaded!')
+                                load_tasks()
+                        except Exception:
+                            flash('Invalid project file.')
+                    return redirect(url_for('index'))
                 # Add new task from form
-            name = request.form.get('name', '').strip()
-            responsible = request.form.get('responsible', '').strip()
-            start = request.form.get('start', '').strip()
-            duration = request.form.get('duration', '').strip()
-            depends_on = request.form.get('depends_on', '').strip()
-            resources = request.form.get('resources', '').strip()
-            notes = request.form.get('notes', '').strip()
-            pdf_page = request.form.get('pdf_page', '').strip()
-            percent_complete = request.form.get('percent_complete', '0').strip()
-            # Handle multiple file uploads for task attachments
-            attachment_filenames = []
+        print("[DEBUG] Entered new task creation branch.")
+        name = request.form.get('name', '').strip()
+        responsible = request.form.get('responsible', '').strip()
+        start = request.form.get('start', '').strip()
+        duration = request.form.get('duration', '').strip()
+        depends_on = request.form.get('depends_on', '').strip()
+        resources = request.form.get('resources', '').strip()
+        notes = request.form.get('notes', '').strip()
+        pdf_page = request.form.get('pdf_page', '').strip()
+        percent_complete = request.form.get('percent_complete', '0').strip()
+        color = request.form.get('color', '#4287f5').strip()
+        # Handle multiple file uploads for task attachments
+        attachment_filenames = []
         if 'attachment' in request.files:
             files = request.files.getlist('attachment')
             for attachment in files:
@@ -552,12 +576,13 @@ def index():
                     'parent': parent_id,
                     'milestone': milestone,
                     'attachments': merged_attachments,
-                    'document_links': links_list
+                    'document_links': links_list,
+                    'color': color
                 }
                 tasks[int(edit_idx)] = new_task
                 changed = True
             else:
-                # New task: always set attachments field (even if empty)
+                 # New task: always set attachments field (even if empty)
                 new_task = {
                     'id': next_task_id,
                     'name': name,
@@ -573,17 +598,50 @@ def index():
                     'parent': parent_id,
                     'milestone': milestone,
                     'attachments': attachment_filenames,
-                    'document_links': links_list
+                    'document_links': links_list,
+                    'color': color
                 }
                 tasks.append(new_task)
                 next_task_id += 1
                 changed = True
+        print(f"[DEBUG] changed={changed}, name='{name}', duration='{duration}', auto_start='{auto_start}'")
         if changed:
+            print("[DEBUG] New task form submitted.")
+            print(f"[DEBUG] Form data: {request.form}")
+            print(f"[DEBUG] New task: {new_task}")
+            print(f"[DEBUG] Task list before save: {tasks}")
             save_tasks()
         return redirect(url_for('index'))
-    print("[DEBUG] Tasks before rendering index:", json.dumps(tasks, indent=2, ensure_ascii=False))
     return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options)
-    print("[DEBUG] Tasks before rendering Gantt chart:", json.dumps(tasks, indent=2, ensure_ascii=False))
+    # ...existing code...
+# --- Update Task Status (AJAX for Kanban drag-and-drop) ---
+@app.route('/update_task_status', methods=['POST'])
+def update_task_status():
+    data = request.get_json()
+    print('[DEBUG] /update_task_status called with:', data)
+    try:
+        task_id = int(data.get('id', -1))
+    except Exception as e:
+        print('[DEBUG] Invalid task id:', data.get('id'))
+        return jsonify({'success': False, 'error': 'Invalid task id'})
+    new_status = data.get('status')
+    found = False
+    for t in tasks:
+        print(f"[DEBUG] Checking task id {t['id']} against {task_id}")
+        if t['id'] == task_id:
+            t['status'] = new_status
+            # Automatically update percent_complete for certain statuses
+            if new_status == 'Completed':
+                t['percent_complete'] = 100
+            elif new_status == 'Not Started':
+                t['percent_complete'] = 0
+            save_tasks()
+            print(f"[DEBUG] Updated task {task_id} to status {new_status} and percent_complete {t.get('percent_complete')}")
+            found = True
+            return jsonify({'success': True})
+    if not found:
+        print(f"[DEBUG] Task id {task_id} not found in tasks: {[t['id'] for t in tasks]}")
+    return jsonify({'success': False, 'error': 'Task not found'})
 
 @app.route('/download_project')
 def download_project():

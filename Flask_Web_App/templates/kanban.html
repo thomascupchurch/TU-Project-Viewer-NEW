@@ -6,41 +6,76 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         .kanban-col { min-width: 300px; background: #f8f9fa; border-radius: 8px; padding: 1rem; margin-right: 1rem; }
-        .kanban-card { background: #fff; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 1rem; padding: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.03); }
+        .kanban-card { background: #fff; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 1rem; padding: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.03); cursor: grab; }
+        .kanban-list { min-height: 60px; }
+        .kanban-placeholder { color: #bbb; text-align: center; font-style: italic; padding: 1.5rem 0; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body>
 <div class="container-fluid my-4">
     <h1 class="mb-4">Project Kanban Board</h1>
     <a href="/" class="btn btn-secondary mb-3">Back to Dashboard</a>
     <div class="d-flex flex-row" id="kanban-board">
-        {% for status in ['Not Started', 'In Progress', 'Done'] %}
-        <div class="kanban-col flex-grow-1">
+        {% for status in ['Not Started', 'In Progress', 'Completed'] %}
+        <div class="kanban-col flex-grow-1" data-status="{{ status }}">
             <h4>{{ status }}</h4>
+            <div class="kanban-list" id="kanban-{{ status|replace(' ', '-') }}">
+            {% set found = false %}
             {% for task in tasks if task.status == status %}
-            <div class="kanban-card" style="border-left: 6px solid {{ task.color if task.color else '#4287f5' }};">
-                <strong>{{ task.name }}</strong> <span class="badge bg-secondary">#{{ task.id }}</span><br>
-                <span class="text-muted">{{ task.start }} ({{ task.duration }}d)</span><br>
-                <span>Responsible: {{ task.responsible }}</span><br>
-                <span>Status: {{ task.status }} | Progress: {{ task.percent_complete }}%</span><br>
-                {% if task.attachments %}
-                <span>Attachments:
-                    {% for att in task.attachments %}
-                        <a href="/static/uploads/{{ att }}" target="_blank">{{ att }}</a>{% if not loop.last %}, {% endif %}
-                    {% endfor %}
-                </span><br>
-                {% endif %}
-                {% if task.pdf_page %}
-                <span>PDF Page: {{ task.pdf_page }}</span><br>
-                {% endif %}
-                {% if task.parent %}
-                <span class="text-info">Sub-task of #{{ task.parent }}</span><br>
-                {% endif %}
-            </div>
+                {% set found = true %}
+                <div class="kanban-card" data-task-id="{{ task.id }}" style="border-left: 6px solid {{ task.color if task.color else '#4287f5' }};">
+                    <strong>{{ task.name }}</strong> <span class="badge bg-secondary">#{{ task.id }}</span><br>
+                    <span class="text-muted">{{ task.start }} ({{ task.duration }}d)</span><br>
+                    <span>Responsible: {{ task.responsible }}</span><br>
+                    <span>Status: {{ task.status }} | Progress: {{ task.percent_complete }}%</span><br>
+                    {% if task.attachments %}
+                    <span>Attachments:
+                        {% for att in task.attachments %}
+                            <a href="/static/uploads/{{ att }}" target="_blank">{{ att }}</a>{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                    </span><br>
+                    {% endif %}
+                    {% if task.pdf_page %}
+                    <span>PDF Page: {{ task.pdf_page }}</span><br>
+                    {% endif %}
+                    {% if task.parent %}
+                    <span class="text-info">Sub-task of #{{ task.parent }}</span><br>
+                    {% endif %}
+                </div>
             {% endfor %}
+            {% if not found %}
+                <div class="kanban-placeholder">Drop tasks here</div>
+            {% endif %}
+            </div>
         </div>
         {% endfor %}
     </div>
 </div>
+<script>
+// Enable drag-and-drop for each kanban list
+['Not Started', 'In Progress', 'Completed'].forEach(function(status) {
+    var el = document.getElementById('kanban-' + status.replace(/ /g, '-'));
+    if (el) {
+        new Sortable(el, {
+            group: 'kanban',
+            animation: 150,
+            onAdd: function (evt) {
+                var card = evt.item;
+                var taskId = card.getAttribute('data-task-id');
+                var newStatus = card.closest('.kanban-col').getAttribute('data-status');
+                // Send AJAX to update status
+                fetch('/update_task_status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: taskId, status: newStatus })
+                }).then(r => r.json()).then(data => {
+                    if (!data.success) alert('Failed to update task status');
+                });
+            }
+        });
+    }
+});
+</script>
 </body>
 </html>

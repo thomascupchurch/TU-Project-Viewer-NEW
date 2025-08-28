@@ -26,7 +26,8 @@
         <div class="d-flex flex-row align-items-stretch" style="height: calc(100vh - 4rem); min-height: 600px;">
                 <div class="mb-4">
                     <a href="/calendar" class="btn btn-outline-primary me-2">Calendar View</a>
-                    <a href="/kanban" class="btn btn-outline-success">Kanban Board</a>
+                    <a href="/kanban" class="btn btn-outline-success me-2">Kanban Board</a>
+                    <a href="/gantt" class="btn btn-outline-warning">Gantt Chart</a>
                 </div>
             <!-- Left: PDF viewer (50%) -->
             <div class="d-flex flex-column" style="flex: 1 1 0; min-width: 0; max-width: 50vw; height: 100%;">
@@ -59,15 +60,8 @@
                 <div class="mb-3 d-flex flex-column flex-grow-1" style="min-height: 0; height: 100%;">
                     <div class="mb-4 p-3 bg-white border rounded shadow-sm" style="background: #fffbe6;">
                         <h2 class="mb-3 text-center" style="color: #FF8200; font-weight: bold; letter-spacing: 1px;">Project Timeline</h2>
-                        <img src="/gantt.png?{{ tasks|length }}" alt="Gantt Chart" class="img-fluid border mb-3" style="width: 100%; height: 480px; object-fit: contain; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
-                        <div class="mb-2 text-center">
-                            <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
-                            <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm me-2">Download Timeline (PDF)</a>
-                            <a href="/calendar_export" class="btn btn-outline-success btn-sm me-2">Export Calendar (.ics)</a>
-                            <span class="me-2">Zoom:</span>
-                            <button type="button" class="btn btn-outline-secondary btn-sm gantt-zoom" data-zoom="day">Day</button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm gantt-zoom" data-zoom="week">Week</button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm gantt-zoom" data-zoom="month">Month</button>
+                        <div class="alert alert-info text-center" style="font-size:1.1em;">
+                            <strong>Project Timeline coming soon:</strong> This section will show a true project-management-style timeline with milestones, dependencies, and key events.
                         </div>
                     </div>
                     <h4>Tasks</h4>
@@ -79,13 +73,16 @@
                                     <input type="text" class="form-control" name="name" placeholder="Task name" required>
                                 </div>
                                 <div class="col-md-2 col-6 mb-1 mb-md-0">
-                                    <input type="text" class="form-control" name="responsible" placeholder="Responsible">
+                                    <input type="text" class="form-control" name="responsible" placeholder="Responsible" required>
                                 </div>
                                 <div class="col-md-2 col-6 mb-1 mb-md-0">
                                     <input type="date" class="form-control" name="start" required>
                                 </div>
-                                <div class="col-md-1 col-6 mb-1 mb-md-0">
-                                    <input type="number" class="form-control" name="duration" min="1" value="1" required placeholder="Days">
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="number" class="form-control" name="duration" placeholder="Duration (days)" min="1" required>
+                                </div>
+                                <div class="col-md-2 col-6 mb-1 mb-md-0">
+                                    <input type="color" class="form-control form-control-color" name="color" value="#4287f5" title="Task Color">
                                 </div>
                                 <div class="col-md-1 col-6 mb-1 mb-md-0">
                                     <input type="number" class="form-control" name="percent_complete" placeholder="%" min="0" max="100" value="0">
@@ -94,7 +91,7 @@
                                     <select class="form-select" name="status" id="status">
                                         <option value="Not Started" selected>Status: Not Started</option>
                                         <option value="In Progress">Status: In Progress</option>
-                                        <option value="Done">Status: Done</option>
+                                        <option value="Completed">Status: Completed</option>
                                     </select>
                                 </div>
                                 <div class="col-md-3 col-12">

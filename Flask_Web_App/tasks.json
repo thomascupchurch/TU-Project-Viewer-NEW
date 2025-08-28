@@ -1,88 +1,20 @@
 [
   {
-    "name": "test1",
-    "responsible": "",
-    "start": "2025-08-28",
-    "duration": "1",
+    "id": 1,
+    "name": "durationTest",
+    "responsible": "TU",
+    "start": "2025-09-03",
+    "duration": "4",
     "depends_on": "",
     "resources": "",
     "notes": "",
-    "pdf_page": "29",
+    "pdf_page": "33",
     "status": "In Progress",
-    "percent_complete": "26",
-    "parent": "",
-    "milestone": "",
-    "attachments": [
-      "Pastor Emeritus Parking Sign.pdf"
-    ],
-    "document_links": []
-  },
-  {
-    "name": "NewTest1",
-    "responsible": "",
-    "start": "2025-08-28",
-    "duration": "1",
-    "depends_on": "",
-    "resources": "",
-    "notes": "",
-    "pdf_page": "",
-    "status": "Not Started",
-    "percent_complete": "0",
-    "parent": "",
-    "milestone": "",
-    "attachments": [
-      "Pastor Emeritus Parking Sign.pdf"
-    ],
-    "document_links": []
-  },
-  {
-    "name": "NewTest1",
-    "responsible": "",
-    "start": "2025-08-28",
-    "duration": "1",
-    "depends_on": "",
-    "resources": "",
-    "notes": "",
-    "pdf_page": "",
-    "status": "Not Started",
-    "percent_complete": "0",
-    "parent": "",
-    "milestone": "",
-    "attachments": [
-      "Pastor Emeritus Parking Sign.pdf"
-    ],
-    "document_links": []
-  },
-  {
-    "name": "NewTest1",
-    "responsible": "",
-    "start": "2025-08-28",
-    "duration": "8",
-    "depends_on": "",
-    "resources": "",
-    "notes": "",
-    "pdf_page": "",
-    "status": "In Progress",
-    "percent_complete": "33",
-    "parent": "",
+    "percent_complete": "23",
+    "parent": null,
     "milestone": "",
     "attachments": [],
-    "document_links": []
-  },
-  {
-    "name": "NewTest1",
-    "responsible": "",
-    "start": "2025-08-28",
-    "duration": "1",
-    "depends_on": "",
-    "resources": "",
-    "notes": "",
-    "pdf_page": "",
-    "status": "Not Started",
-    "percent_complete": "0",
-    "parent": "",
-    "milestone": "",
-    "attachments": [],
-    "document_links": []
+    "document_links": [],
+    "color": "#4287f5"
   }
 ]
