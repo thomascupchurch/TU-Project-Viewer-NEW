@@ -1,3 +1,46 @@
+# --- Imports ---
+import csv
+import os
+import io
+import json
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend for server
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response, jsonify
+import zipfile
+import pytz
+
+app = Flask(__name__)
+
+# --- iCalendar Export Route ---
+@app.route('/calendar_export_ics')
+def calendar_export_ics():
+    load_tasks()
+    ics = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//TU Project Viewer//EN',
+        'CALSCALE:GREGORIAN'
+    ]
+    for t in tasks:
+        if not t.get('start'):
+            continue
+        dt = t['start']
+        # Try to format as YYYYMMDD or YYYYMMDDTHHMMSSZ
+        dt_fmt = dt.replace('-', '').replace(':', '').replace(' ', 'T')
+        ics.append('BEGIN:VEVENT')
+        ics.append(f'SUMMARY:{t.get("name", "Task")}')
+        ics.append(f'DTSTART;VALUE=DATE:{dt_fmt}')
+        if t.get('notes'):
+            ics.append(f'DESCRIPTION:{t["notes"]}')
+        ics.append('END:VEVENT')
+    ics.append('END:VCALENDAR')
+    ics_str = '\r\n'.join(ics)
+    return Response(ics_str, mimetype='text/calendar', headers={
+        'Content-Disposition': 'attachment; filename=project_tasks.ics'
+    })
 # --- Project Timeline Helper ---
 def get_project_timeline_data(tasks):
     # Extract milestones and phases (tasks with 'milestone' or status 'Completed' or 'In Progress')
