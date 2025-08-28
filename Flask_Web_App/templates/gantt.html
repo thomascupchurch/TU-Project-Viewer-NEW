@@ -2,7 +2,35 @@
 {% block content %}
 <div class="container mt-4">
     <h2 class="mb-4" style="color: #FF8200; font-weight: bold; letter-spacing: 1px;">Gantt Chart</h2>
-    <img src="/gantt.png?{{ tasks|length }}" alt="Gantt Chart" class="img-fluid border mb-3" style="width: 100%; height: 600px; object-fit: contain; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+    <script>
+    // Read color scheme from CSS variables
+    function getCssVar(name, fallback) {
+        const val = getComputedStyle(document.documentElement).getPropertyValue(name);
+        return val && val.trim() ? val.trim() : fallback;
+    }
+    function updateGanttImg() {
+        const primary = encodeURIComponent(getCssVar('--primary-color', '#4287f5'));
+        const secondary = encodeURIComponent(getCssVar('--secondary-color', '#FF8200'));
+        const img = document.getElementById('gantt-img');
+        img.src = `/gantt.png?primary=${primary}&secondary=${secondary}&_=${Date.now()}`;
+    }
+    function setupGanttColorSync() {
+        updateGanttImg();
+        document.getElementById('primaryColor').addEventListener('input', updateGanttImg);
+        document.getElementById('secondaryColor').addEventListener('input', updateGanttImg);
+        // Listen for color changes in other tabs/windows
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'primaryColor' || e.key === 'secondaryColor') {
+                setTimeout(updateGanttImg, 50);
+            }
+        });
+    }
+    // Wait for color inputs to be set from localStorage, then update Gantt
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(setupGanttColorSync, 100);
+    });
+    </script>
+    <img id="gantt-img" src="" alt="Gantt Chart" class="img-fluid border mb-3" style="width: 100%; height: 600px; object-fit: contain; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
     <div class="mb-2 text-center">
         <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
         <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm me-2">Download Timeline (PDF)</a>

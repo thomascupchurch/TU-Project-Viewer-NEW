@@ -20,7 +20,10 @@
                     <strong>{{ task.name }}</strong> <span class="badge bg-secondary">#{{ task.id }}</span><br>
                     <span class="text-muted">{{ task.start }} ({{ task.duration }}d)</span><br>
                     <span>Responsible: {{ task.responsible }}</span><br>
-                    <span>Status: {{ task.status }} | Progress: {{ task.percent_complete }}%</span><br>
+                                        <span>Status: {{ task.status }} | Progress: {{ task.percent_complete }}%</span>
+                                        <div class="progress my-1" style="height: 16px; background: var(--secondary-color);">
+                                            <div class="progress-bar" role="progressbar" style="width: {{ task.percent_complete|default(0) }}%; background: var(--primary-color);" aria-valuenow="{{ task.percent_complete|default(0) }}" aria-valuemin="0" aria-valuemax="100"></div>
+                                        </div>
                     {% if task.attachments %}
                     <span>Attachments:
                         {% for att in task.attachments %}

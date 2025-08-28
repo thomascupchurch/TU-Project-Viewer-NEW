@@ -23,25 +23,78 @@ def tasks_page():
     print("HIT /tasks route")
     load_tasks()
     if request.method == 'POST':
-        # Simple task creation from form
+        # Task creation or editing from form
         name = request.form.get('name', '').strip()
         start = request.form.get('start', '').strip()
         responsible = request.form.get('responsible', '').strip()
-        if name:
-            tasks.append({
-                'id': len(tasks) + 1,
-                'name': name,
-                'start': start,
-                'responsible': responsible,
-                'status': 'Not Started',
-                'percent_complete': 0,
-                'attachments': [],
-                'notes': '',
-                'milestone': '',
-                'color': '#4287f5',
-                'duration': 1
-            })
+        duration = request.form.get('duration', '').strip()
+        percent_complete = request.form.get('percent_complete', '0').strip()
+        status = request.form.get('status', '').strip()
+        milestone = request.form.get('milestone', '').strip()
+        parent = request.form.get('parent', '').strip()
+        depends_on = request.form.get('depends_on', '').strip()
+        resources = request.form.get('resources', '').strip()
+        notes = request.form.get('notes', '').strip()
+        pdf_page = request.form.get('pdf_page', '').strip()
+        document_links = request.form.get('document_links', '').strip()
+        edit_idx = request.form.get('edit_idx', '').strip()
+        # Convert document_links to list
+        links_list = [l.strip() for l in document_links.split(',') if l.strip()]
+        # Handle attachments (for both create and edit)
+        attachment_filenames = []
+        if 'attachments' in request.files:
+            files = request.files.getlist('attachments')
+            for attachment in files:
+                if attachment and attachment.filename:
+                    safe_name = attachment.filename.replace('..', '').replace('/', '_').replace('\\', '_')
+                    save_path = os.path.join(UPLOAD_FOLDER, safe_name)
+                    attachment.save(save_path)
+                    attachment_filenames.append(safe_name)
+        # If editing, update the existing task
+        if edit_idx.isdigit() and int(edit_idx) < len(tasks):
+            idx = int(edit_idx)
+            task = tasks[idx]
+            # Merge new attachments with existing
+            merged_attachments = list(task.get('attachments', []))
+            for fname in attachment_filenames:
+                if fname not in merged_attachments:
+                    merged_attachments.append(fname)
+            task['attachments'] = merged_attachments
+            task['name'] = name
+            task['start'] = start
+            task['responsible'] = responsible
+            task['duration'] = duration
+            task['percent_complete'] = percent_complete
+            task['status'] = status
+            task['milestone'] = milestone
+            task['parent'] = parent
+            task['depends_on'] = depends_on
+            task['resources'] = resources
+            task['notes'] = notes
+            task['pdf_page'] = pdf_page
+            task['document_links'] = links_list
             save_tasks()
+        else:
+            # Create new task
+            if name:
+                tasks.append({
+                    'id': len(tasks) + 1,
+                    'name': name,
+                    'start': start,
+                    'responsible': responsible,
+                    'status': status or 'Not Started',
+                    'percent_complete': percent_complete or 0,
+                    'attachments': attachment_filenames,
+                    'notes': notes,
+                    'milestone': milestone,
+                    'duration': duration or 1,
+                    'parent': parent,
+                    'depends_on': depends_on,
+                    'resources': resources,
+                    'pdf_page': pdf_page,
+                    'document_links': links_list
+                })
+                save_tasks()
         return redirect(url_for('tasks_page'))
     return render_template('tasks.html', tasks=tasks)
 
@@ -350,6 +403,10 @@ def gantt_chart():
         critical = compute_critical_path(tasks)
         fig, ax = plt.subplots(figsize=(24, 12))
         plt.rcParams.update({'font.size': 20})
+        # Get color scheme from query params or use defaults
+        from flask import request as flask_request
+        primary_color = flask_request.args.get('primary', '#4287f5')
+        secondary_color = flask_request.args.get('secondary', '#FF8200')
         if not parsed:
             ax.text(0.5, 0.5, 'No tasks to display', ha='center', va='center', fontsize=16, color='gray', transform=ax.transAxes)
             ax.set_xlabel('Date')
@@ -361,7 +418,7 @@ def gantt_chart():
             y_pos = list(range(len(parsed)))
             for i, t in enumerate(parsed):
                 if t.get('is_milestone'):
-                    ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color='#FF8200', edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
+                    ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color=secondary_color, edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
                 else:
                     # Find the original task to get percent_complete
                     task_name = t['name'].lstrip()
@@ -373,12 +430,12 @@ def gantt_chart():
                     percent = max(0, min(percent, 100))
                     dur = t['duration']
                     done_dur = dur * percent / 100.0
-                    # Draw completed (orange) part
+                    # Draw completed (primary color) part
                     if done_dur > 0:
-                        ax.barh(i, done_dur, left=starts[i], height=0.4, align='center', color='#FF8200', edgecolor='black')
-                    # Draw remaining (gray) part
+                        ax.barh(i, done_dur, left=starts[i], height=0.4, align='center', color=primary_color, edgecolor='black')
+                    # Draw remaining (secondary color) part
                     if done_dur < dur:
-                        ax.barh(i, dur - done_dur, left=starts[i] + done_dur, height=0.4, align='center', color='#555555', edgecolor='black')
+                        ax.barh(i, dur - done_dur, left=starts[i] + done_dur, height=0.4, align='center', color=secondary_color, edgecolor='black')
             ax.set_yticks(y_pos)
             ax.set_yticklabels(names)
             ax.set_xlabel('Date')
@@ -661,7 +718,6 @@ def index():
                     'milestone': milestone,
                     'attachments': merged_attachments,
                     'document_links': links_list,
-                    'color': color
                 }
                 tasks[int(edit_idx)] = new_task
                 changed = True
@@ -683,7 +739,6 @@ def index():
                     'milestone': milestone,
                     'attachments': attachment_filenames,
                     'document_links': links_list,
-                    'color': color
                 }
                 tasks.append(new_task)
                 next_task_id += 1
