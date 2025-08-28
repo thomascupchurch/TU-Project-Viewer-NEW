@@ -11,16 +11,22 @@
             {% set n = timeline_items|length %}
             {% for item in timeline_items %}
                 {% set idx = loop.index0 %}
-                {% set left = (100/(n-1))*idx if n > 1 else 50 %}
-                <div style="position:relative; min-width:120px; text-align:center; z-index:1; left:calc({{left}}% - 60px);">
+                {% if n > 1 %}
+                    {% set left = (100/(n-1))*idx %}
+                {% else %}
+                    {% set left = 50 %}
+                {% endif %}
+                <div style="position:absolute; min-width:120px; text-align:center; z-index:1; top:0; left:{{ '%.2f' % left }}%; transform: translateX(-60px);">
                     <div style="display:inline-block;">
-                        <div style="width:32px; height:32px; margin:0 auto; border-radius:50%; background:{{ '#FF8200' if item.type=='milestone' else '#4287f5' }}; border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.08); color:#fff; font-weight:bold; font-size:1.2em; display:flex; align-items:center; justify-content:center;">
-                            {% if item.type=='milestone' %}
+                        {% if item.type=='milestone' %}
+                            <div style="width:32px; height:32px; margin:0 auto; border-radius:50%; background:#FF8200; border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.08); color:#fff; font-weight:bold; font-size:1.2em; display:flex; align-items:center; justify-content:center;">
                                 <span title="Milestone">★</span>
-                            {% else %}
+                            </div>
+                        {% else %}
+                            <div style="width:32px; height:32px; margin:0 auto; border-radius:50%; background:#4287f5; border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.08); color:#fff; font-weight:bold; font-size:1.2em; display:flex; align-items:center; justify-content:center;">
                                 <span title="Phase">●</span>
-                            {% endif %}
-                        </div>
+                            </div>
+                        {% endif %}
                         <div style="margin-top:8px; font-size:1em; font-weight:600; color:#333;">{{ item.name }}</div>
                         <div style="font-size:0.95em; color:#888;">{{ item.date }}</div>
                     </div>

@@ -1,0 +1,19 @@
+/* Ensure calendar is always visible */
+#calendar {
+    min-height: 600px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-bottom: 2rem;
+}
+/* Custom styles for TU Project Viewer */
+.container-fluid.my-4.tu-main-container {
+    height: 100vh;
+    max-width: 100vw;
+    overflow: hidden;
+}
+
+body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}

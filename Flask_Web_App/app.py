@@ -14,11 +14,6 @@ def get_project_timeline_data(tasks):
     timeline_items = [item for item in timeline_items if item['date']]
     timeline_items.sort(key=lambda x: x['date'])
     return timeline_items
-@app.route('/timeline')
-def timeline_page():
-    load_tasks()
-    timeline_items = get_project_timeline_data(tasks)
-    return render_template('timeline.html', tasks=tasks, timeline_items=timeline_items)
 # --- Imports ---
 import csv
 import os
@@ -33,6 +28,13 @@ from flask import Flask, render_template, request, redirect, url_for, Response, 
 import zipfile
 
 app = Flask(__name__)
+
+# --- Timeline Route (moved below app creation) ---
+@app.route('/timeline')
+def timeline_page():
+    load_tasks()
+    timeline_items = get_project_timeline_data(tasks)
+    return render_template('timeline.html', tasks=tasks, timeline_items=timeline_items)
 
 # --- Calendar View Route ---
 @app.route('/calendar')
