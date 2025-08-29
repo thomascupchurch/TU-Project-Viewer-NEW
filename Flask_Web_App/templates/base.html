@@ -42,7 +42,9 @@
             <a href="/gantt" class="btn btn-outline-warning me-2">Gantt Chart</a>
             <a href="/gantt_interactive" class="btn btn-outline-warning me-2">Interactive Gantt</a>
             <a href="/timeline" class="btn btn-outline-info">Project Timeline</a>
+            {% if current_user.is_authenticated and current_user.is_admin %}
             <a href="/control-panel" class="btn btn-outline-dark">Control Panel</a>
+            {% endif %}
         </div>
         {% block content %}{% endblock %}
     </div>

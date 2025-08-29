@@ -29,13 +29,18 @@ login_manager.login_view = 'login'
 # --- User Model ---
 import uuid
 USERS_FILE = os.path.join(os.path.dirname(__file__), 'users.json')
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), 'settings.json')
 users = []
+settings = {
+    'open_editing': False  # False => only admins can edit; True => any authenticated user can edit their tasks
+}
 
 class User(UserMixin):
-    def __init__(self, id, username, password_hash):
+    def __init__(self, id, username, password_hash, is_admin=False):
         self.id = id
         self.username = username
         self.password_hash = password_hash
+        self.is_admin = is_admin
     def get_id(self):
         return str(self.id)
 
@@ -51,11 +56,40 @@ def save_users():
     with open(USERS_FILE, 'w', encoding='utf-8') as f:
         json.dump(users, f, indent=2, ensure_ascii=False)
 
+def load_settings():
+    global settings
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    settings.update(data)
+        except Exception:
+            pass
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+def can_edit():
+    """Return True if current user allowed to perform editing operations."""
+    if not current_user.is_authenticated:
+        return False
+    # Admins always
+    if getattr(current_user, 'is_admin', False):
+        return True
+    # Otherwise require open_editing flag
+    load_settings()
+    return bool(settings.get('open_editing'))
+
 @login_manager.user_loader
 def load_user(user_id):
     for u in users:
         if str(u['id']) == str(user_id):
-            return User(u['id'], u['username'], u['password_hash'])
+            return User(u['id'], u['username'], u['password_hash'], u.get('is_admin', False))
     return None
 
 ############################################
@@ -138,7 +172,7 @@ def login():
         password = request.form['password']
         user = next((u for u in users if u['username'] == username), None)
         if user and check_password_hash(user['password_hash'], password):
-            login_user(User(user['id'], user['username'], user['password_hash']))
+            login_user(User(user['id'], user['username'], user['password_hash'], user.get('is_admin', False)))
             return redirect(url_for('tasks_page'))
         else:
             flash('Invalid username or password.')
@@ -185,17 +219,18 @@ def tasks_page():
     print("HIT /tasks route")
     load_tasks()
     load_phases()
+    load_settings()
     alert_message = None
-    # Only show tasks for the current user
+    # Only show tasks for the current user (or shared)
     user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id() or (current_user.get_id() in t.get('shared_with', []))]
+
     if request.method == 'POST':
-        # Task creation or editing from form
+        # --- Gather form data ---
         share_with = request.form.get('share_with', '').strip()
         share_with_ids = []
         if share_with:
             load_users()
-            usernames = [u.strip() for u in share_with.split(',') if u.strip()]
-            for uname in usernames:
+            for uname in [u.strip() for u in share_with.split(',') if u.strip()]:
                 user = next((u for u in users if u['username'] == uname), None)
                 if user:
                     share_with_ids.append(user['id'])
@@ -216,22 +251,18 @@ def tasks_page():
         external_task = True if request.form.get('external_task') == 'on' else False
         external_milestone = True if request.form.get('external_milestone') == 'on' else False
         edit_idx = request.form.get('edit_idx', '').strip()
-        # Convert document_links to list
         links_list = [l.strip() for l in document_links.split(',') if l.strip()]
-        # Handle attachments (for both create and edit)
+        # Attachments
         attachment_filenames = []
         if 'attachments' in request.files:
-            files = request.files.getlist('attachments')
-            for attachment in files:
+            for attachment in request.files.getlist('attachments'):
                 if attachment and attachment.filename:
                     safe_name = attachment.filename.replace('..', '').replace('/', '_').replace('\\', '_')
                     save_path = os.path.join(UPLOAD_FOLDER, safe_name)
                     attachment.save(save_path)
                     attachment_filenames.append(safe_name)
 
-        # Dependency enforcement: if depends_on is set, start must be after dependency's end
-        dep_task = None
-        dep_end_date = None
+        # --- Dependency enforcement ---
         if depends_on:
             dep_task = next((t for t in tasks if t['name'] == depends_on and t.get('user_id') == current_user.get_id()), None)
             if dep_task and dep_task.get('start') and dep_task.get('duration'):
@@ -245,47 +276,52 @@ def tasks_page():
                             alert_message = f"Task '{name}' cannot start before its dependency '{depends_on}' is complete (must start on or after {dep_end_date.strftime('%Y-%m-%d')})."
                 except Exception:
                     pass
-
         if alert_message:
-            # Render page with alert, do not save
-            load_tasks()
-            user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id()]
+            # Re-render with alert
+            user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id() or (current_user.get_id() in t.get('shared_with', []))]
             return render_template('tasks.html', tasks=user_tasks, alert_message=alert_message, phases=phases)
 
-        # If editing, update the existing task (only if owned by user)
+        # --- EDIT PATH ---
         if edit_idx.isdigit() and int(edit_idx) < len(tasks):
             idx = int(edit_idx)
             task = tasks[idx]
-            if task.get('user_id') != current_user.get_id():
+            if not can_edit():
+                flash('Editing is restricted to admins.')
+                return redirect(url_for('tasks_page'))
+            if task.get('user_id') != current_user.get_id() and not getattr(current_user, 'is_admin', False):
                 flash('You can only edit your own tasks.')
                 return redirect(url_for('tasks_page'))
-            # Merge new attachments with existing
             merged_attachments = list(task.get('attachments', []))
             for fname in attachment_filenames:
                 if fname not in merged_attachments:
                     merged_attachments.append(fname)
-            task['attachments'] = merged_attachments
-            task['name'] = name
-            task['phase'] = phase
-            task['start'] = start
-            task['responsible'] = responsible
-            task['duration'] = duration
-            task['percent_complete'] = percent_complete
-            task['status'] = status
-            task['milestone'] = milestone
-            task['parent'] = parent
-            task['depends_on'] = depends_on
-            task['resources'] = resources
-            task['notes'] = notes
-            task['pdf_page'] = pdf_page
-            task['document_links'] = links_list
-            task['external_task'] = external_task
-            task['external_milestone'] = external_milestone
-            # Update sharing
-            task['shared_with'] = share_with_ids
+            task.update({
+                'name': name,
+                'phase': phase,
+                'start': start,
+                'responsible': responsible,
+                'duration': duration,
+                'percent_complete': percent_complete,
+                'status': status,
+                'milestone': milestone,
+                'parent': parent,
+                'depends_on': depends_on,
+                'resources': resources,
+                'notes': notes,
+                'pdf_page': pdf_page,
+                'document_links': links_list,
+                'external_task': external_task,
+                'external_milestone': external_milestone,
+                'shared_with': share_with_ids,
+                'attachments': merged_attachments
+            })
             save_tasks()
+            return redirect(url_for('tasks_page'))
         else:
-            # Create new task
+            # --- CREATE PATH ---
+            if not can_edit():
+                flash('Editing is restricted to admins.')
+                return redirect(url_for('tasks_page'))
             if name:
                 tasks.append({
                     'id': len(tasks) + 1,
@@ -305,12 +341,13 @@ def tasks_page():
                     'resources': resources,
                     'pdf_page': pdf_page,
                     'document_links': links_list,
-            'external_task': external_task,
-            'external_milestone': external_milestone,
+                    'external_task': external_task,
+                    'external_milestone': external_milestone,
                     'shared_with': share_with_ids
                 })
                 save_tasks()
-        return redirect(url_for('tasks_page'))
+            return redirect(url_for('tasks_page'))
+
     return render_template('tasks.html', tasks=user_tasks, alert_message=alert_message, phases=phases)
 
 # --- iCalendar Export Route ---
@@ -360,6 +397,7 @@ def get_project_timeline_data(tasks):
 
 # --- Timeline Route (moved below app creation) ---
 @app.route('/timeline')
+@login_required
 def timeline_page():
     load_tasks()
     timeline_items = get_project_timeline_data(tasks)
@@ -367,23 +405,44 @@ def timeline_page():
 
 @app.route('/control-panel')
 @login_required
+@admin_required
 def control_panel_page():
-    # No server-side data needed beyond base template color handling.
     return render_template('control_panel.html')
+
+@app.route('/settings_json')
+@login_required
+@admin_required
+def settings_json():
+    load_settings()
+    return jsonify({'open_editing': settings.get('open_editing', False)})
+
+@app.route('/set_open_editing', methods=['POST'])
+@login_required
+@admin_required
+def set_open_editing():
+    data = request.get_json(force=True, silent=True) or {}
+    val = bool(data.get('open_editing', False))
+    load_settings()
+    settings['open_editing'] = val
+    save_settings()
+    return jsonify({'success': True, 'open_editing': settings['open_editing']})
 
 # --- Calendar View Route ---
 @app.route('/calendar')
+@login_required
 def calendar_view():
     return render_template('calendar.html')
 
 # --- Kanban View Route ---
 @app.route('/kanban')
+@login_required
 def kanban_view():
     return render_template('kanban.html', tasks=tasks)
 
 
 # --- Tasks JSON for Calendar & API ---
 @app.route('/tasks_json')
+@login_required
 def tasks_json():
     # Return all fields for each task, including id and parent (by id)
     return jsonify(tasks)
@@ -642,17 +701,20 @@ def parse_tasks_for_gantt(tasks):
     return all_tasks
 
 @app.route('/gantt')
+@login_required
 def gantt_page():
     load_tasks()
     return render_template('gantt.html', tasks=tasks)
 
 # --- Interactive Gantt (frontend JS-based) ---
 @app.route('/gantt_interactive')
+@login_required
 def gantt_interactive_page():
     load_tasks()
     return render_template('gantt_interactive.html')
 
 @app.route('/gantt_data')
+@login_required
 def gantt_data():
     """Return task data formatted for interactive Gantt usage.
     Each task includes computed finish date (start + duration days) and flags.
@@ -1131,6 +1193,12 @@ def update_task_status():
     for t in tasks:
         print(f"[DEBUG] Checking task id {t['id']} against {task_id}")
         if t['id'] == task_id:
+            # Authorization: admin always; otherwise must own & can_edit
+            if not getattr(current_user, 'is_authenticated', False):
+                return jsonify({'success': False, 'error': 'Auth required'}), 401
+            if not getattr(current_user, 'is_admin', False):
+                if t.get('user_id') != current_user.get_id() or not can_edit():
+                    return jsonify({'success': False, 'error': 'Not authorized'}), 403
             t['status'] = new_status
             # Automatically update percent_complete for certain statuses
             if new_status == 'Completed':
@@ -1161,16 +1229,17 @@ def update_task_fields():
     duration = data.get('duration')
     percent = data.get('percent_complete')
     updated = False
-    adjusted = False
-    adjusted_start = None
     for t in tasks:
         if t.get('id') == task_id:
             # Ownership check: user must own or be admin
             owner_id = t.get('user_id') or ''
             user_rec = next((u for u in users if str(u['id']) == str(current_user.get_id())), None)
             is_admin = user_rec.get('is_admin', False) if user_rec else False
-            if owner_id and owner_id != current_user.get_id() and not is_admin:
-                return jsonify({'success': False, 'error': 'Not authorized'}), 403
+            if not is_admin:
+                if owner_id and owner_id != current_user.get_id():
+                    return jsonify({'success': False, 'error': 'Not authorized'}), 403
+                if not can_edit():
+                    return jsonify({'success': False, 'error': 'Editing restricted'}), 403
             if start:
                 # Basic validation format
                 try:
@@ -1218,7 +1287,7 @@ def update_task_fields():
             break
     if not updated:
         return jsonify({'success': False, 'error': 'Task not found'}), 404
-    return jsonify({'success': True, 'adjusted': False, 'start': t.get('start'), 'duration': t.get('duration'), 'percent_complete': t.get('percent_complete')})
+    return jsonify({'success': True, 'start': t.get('start'), 'duration': t.get('duration'), 'percent_complete': t.get('percent_complete')})
 
 @app.route('/download_project')
 def download_project():

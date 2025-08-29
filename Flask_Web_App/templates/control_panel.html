@@ -13,7 +13,24 @@
         <input type="color" class="form-control form-control-color" id="secondaryColor" value="#FF8200" title="Secondary Color">
       </div>
     </form>
+    <hr>
+    <form id="editing-mode-form" class="mt-3">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="openEditingToggle">
+        <label class="form-check-label" for="openEditingToggle">Allow non-admin users to create/edit tasks</label>
+      </div>
+      <small class="text-muted">When off, only admins may create or edit tasks (including drag/resize on interactive Gantt).</small>
+    </form>
   </div>
 </div>
 <div class="alert alert-info">Adjust your project color scheme here. These colors apply across all views (tasks, Gantt, timeline, etc.).</div>
+<script>
+fetch('/settings_json').then(r=>r.json()).then(s=>{
+  document.getElementById('openEditingToggle').checked = !!s.open_editing;
+});
+document.getElementById('openEditingToggle').addEventListener('change', function(){
+  fetch('/set_open_editing', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({open_editing: this.checked})})
+    .then(r=>r.json()).then(resp=>{ if(!resp.success){ alert('Failed to save setting'); this.checked = !this.checked; }});
+});
+</script>
 {% endblock %}
