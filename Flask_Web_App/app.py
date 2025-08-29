@@ -17,7 +17,19 @@ import zipfile
 import pytz
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-import portalocker
+try:
+    import portalocker  # File locking
+except ImportError:  # Fallback no-op locking so app doesn't crash if dependency missing
+    class _PortalockerFallback:
+        LOCK_SH = 1
+        LOCK_EX = 2
+        @staticmethod
+        def lock(f, mode):
+            return True
+        @staticmethod
+        def unlock(f):
+            return True
+    portalocker = _PortalockerFallback()
 
 app = Flask(__name__)
 # Use environment variable for secret key (fallback only for dev)
