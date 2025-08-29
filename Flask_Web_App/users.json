@@ -1,0 +1,14 @@
+[
+  {
+    "id": "e7c0ace2-2872-409f-80ce-19d055ac032a",
+    "username": "admin",
+    "password_hash": "scrypt:32768:8:1$mcfWD17pqTKkIi15$03eab75ab1fe18d0b9b3c8e27317d6fac9d47f64cc4be8b0e2f3f9d208bfca3ef055b0c49253e7547d761c50cda09088f89c24b5f0c79d661a1f48a6fd011d49",
+    "is_admin": true
+  },
+  {
+    "id": "40498f4f-2a92-44e0-ba35-3eddfa096938",
+    "username": "thomascupchurch",
+    "password_hash": "scrypt:32768:8:1$Zl1dOY4IupGKVaEx$34b8b92a91973eeaf879c52cfa3ccee97241f26edc1f2d96574b5548cae63ea7c2f53872fcb02b5b40a4fa804337db730ba5d03fe314d4b210e68eaa45641f76",
+    "is_admin": true
+  }
+]

@@ -12,7 +12,8 @@
         const primary = encodeURIComponent(getCssVar('--primary-color', '#4287f5'));
         const secondary = encodeURIComponent(getCssVar('--secondary-color', '#FF8200'));
         const img = document.getElementById('gantt-img');
-        img.src = `/gantt.png?primary=${primary}&secondary=${secondary}&_=${Date.now()}`;
+    const hideExternal = document.getElementById('hideExternalToggle')?.checked ? '1' : '0';
+    img.src = `/gantt.png?primary=${primary}&secondary=${secondary}&hide_external=${hideExternal}&_=${Date.now()}`;
     }
     function setupGanttColorSync() {
         updateGanttImg();
@@ -30,7 +31,26 @@
         setTimeout(setupGanttColorSync, 100);
     });
     </script>
+    <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="hideExternalToggle" />
+        <label class="form-check-label" for="hideExternalToggle">Hide External Tasks & Milestones</label>
+    </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toggle = document.getElementById('hideExternalToggle');
+        toggle.addEventListener('change', updateGanttImg);
+    });
+    </script>
     <img id="gantt-img" src="" alt="Gantt Chart" class="img-fluid border mb-3" style="width: 100%; height: 600px; object-fit: contain; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+    <div class="row g-3 mb-4 small" id="gantt-legend-html">
+        <div class="col-auto d-flex align-items-center"><span style="display:inline-block;width:30px;height:14px;background: var(--primary-color);border:1px solid #000;margin-right:6px;"></span> Completed Portion</div>
+        <div class="col-auto d-flex align-items-center"><span style="display:inline-block;width:30px;height:14px;background: var(--secondary-color);border:1px solid #000;margin-right:6px;"></span> Remaining Portion</div>
+        <div class="col-auto d-flex align-items-center"><span style="display:inline-block;width:30px;height:14px;background:red;border:1px solid #000;margin-right:6px;background-image:repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0 4px, transparent 4px 8px);"></span> External Task</div>
+        <div class="col-auto d-flex align-items-center"><span style="display:inline-block;width:18px;height:18px;background: var(--secondary-color);border:1px solid #000;transform:rotate(45deg);margin-right:10px;"></span> Milestone</div>
+        <div class="col-auto d-flex align-items-center"><span style="display:inline-block;width:18px;height:18px;background:red;border:1px solid #000;transform:rotate(45deg);margin-right:10px;"></span> External Milestone</div>
+        <div class="col-auto d-flex align-items-center"><span style="display:inline-block;width:40px;height:4px;background:blue;margin-right:6px;"></span> Parent → Child</div>
+        <div class="col-auto d-flex align-items-center"><span style="display:inline-block;width:40px;height:0;border-top:3px dashed red;margin-right:6px;"></span> Dependency</div>
+    </div>
     <div class="mb-2 text-center">
         <a href="/gantt_export/png" class="btn btn-outline-primary btn-sm me-2">Download Timeline (PNG)</a>
         <a href="/gantt_export/pdf" class="btn btn-outline-danger btn-sm me-2">Download Timeline (PDF)</a>

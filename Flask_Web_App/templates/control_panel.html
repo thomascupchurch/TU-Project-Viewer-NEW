@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card mb-4">
+  <div class="card-header">Control Panel</div>
+  <div class="card-body">
+    <form id="color-scheme-form" class="row g-3 align-items-center">
+      <div class="col-auto">
+        <label for="primaryColor" class="form-label mb-0">Primary Color</label>
+        <input type="color" class="form-control form-control-color" id="primaryColor" value="#4287f5" title="Primary Color">
+      </div>
+      <div class="col-auto">
+        <label for="secondaryColor" class="form-label mb-0">Secondary Color</label>
+        <input type="color" class="form-control form-control-color" id="secondaryColor" value="#FF8200" title="Secondary Color">
+      </div>
+    </form>
+  </div>
+</div>
+<div class="alert alert-info">Adjust your project color scheme here. These colors apply across all views (tasks, Gantt, timeline, etc.).</div>
+{% endblock %}

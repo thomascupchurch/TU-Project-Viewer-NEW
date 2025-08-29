@@ -7,7 +7,27 @@
     {% endif %}
 <div class="container my-4">
     <h2 class="mb-4">Tasks List & Creation</h2>
+    <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="hideExternalTasksToggle">
+        <label class="form-check-label" for="hideExternalTasksToggle">Hide External Tasks & Milestones</label>
+    </div>
     <form method="post" enctype="multipart/form-data" class="row g-3 mb-4">
+        <div class="col-md-3">
+            <select class="form-select" name="phase">
+                <option value="">Select Phase</option>
+                {% if phases %}
+                    {% for phase in phases %}
+                        <option value="{{ phase.name }}">{{ phase.name }}</option>
+                    {% endfor %}
+                {% endif %}
+            </select>
+        </div>
+        <div class="col-12 mb-2">
+            <a href="{{ url_for('phases_page') }}" class="btn btn-outline-secondary btn-sm">Manage Phases</a>
+        </div>
+        <div class="col-md-3">
+            <input type="text" class="form-control" name="share_with" placeholder="Share with (comma-separated usernames)">
+        </div>
         <div class="col-md-3">
             <input type="text" class="form-control" name="name" placeholder="Task Name" required>
         </div>
@@ -61,62 +81,88 @@
                     <div class="col-md-6">
                         <input type="file" class="form-control" name="attachments" multiple>
                     </div>
+                    <div class="col-md-3 form-check">
+                        <input class="form-check-input" type="checkbox" name="external_task" id="external_task_add">
+                        <label class="form-check-label" for="external_task_add">External Task</label>
+                    </div>
+                    <div class="col-md-3 form-check">
+                        <input class="form-check-input" type="checkbox" name="external_milestone" id="external_milestone_add">
+                        <label class="form-check-label" for="external_milestone_add">External Milestone</label>
+                    </div>
                 </div>
             </div>
         </div>
     </form>
         <table class="table table-bordered table-hover">
-                <thead class="table-light">
-            <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Start</th>
-                <th>Responsible</th>
-                <th>Duration</th>
-                <th>Status</th>
-                <th>Progress</th>
-                <th>Milestone</th>
-                <th>Parent</th>
-                <th>Depends On</th>
-                <th>Attachments</th>
-                <th>Action</th>
-            </tr>
-                </thead>
-                <tbody>
-                        {% for task in tasks %}
-            <tr>
-                <td>{{ task.id }}</td>
-                <td>{{ task.name }}</td>
-                <td>{{ task.start }}</td>
-                <td>{{ task.responsible }}</td>
-                <td>{{ task.duration }}</td>
-                <td>{{ task.status }}</td>
-                <td>
-                    <div class="progress" style="height: 20px; background: var(--secondary-color);">
-                        <div class="progress-bar" role="progressbar" style="width: {{ task.percent_complete|default(0) }}%; background: var(--primary-color);" aria-valuenow="{{ task.percent_complete|default(0) }}" aria-valuemin="0" aria-valuemax="100">
-                            {{ task.percent_complete|default(0) }}%
-                        </div>
-                    </div>
-                </td>
-                <td>{{ task.milestone }}</td>
-                <td>{{ task.parent }}</td>
-                <td>{{ task.depends_on }}</td>
-                <td>
-                    {% if task.attachments and task.attachments|length > 0 %}
-                    {% for fname in task.attachments %}
-                        <a href="/static/uploads/{{ fname|urlencode }}" target="_blank">{{ fname }}</a>{% if not loop.last %}, {% endif %}
-                    {% endfor %}
-                    {% else %}
-                    <span class="text-muted">None</span>
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Start</th>
+                    <th>Responsible</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Milestone</th>
+                    <th>Ext</th>
+                    <th>Parent</th>
+                    <th>Depends On</th>
+                    <th>Attachments</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set phase_tasks = {} %}
+                {% for task in tasks %}
+                    {% set phase = task.phase or 'No Phase' %}
+                    {% if phase_tasks[phase] is not defined %}
+                        {% set _ = phase_tasks.update({phase: []}) %}
                     {% endif %}
-                </td>
-                <td>
-                    <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
-                    <button type="button" class="btn btn-sm btn-outline-danger delete-task-btn ms-1" data-task-idx="{{ loop.index0 }}">Delete</button>
-                </td>
-            </tr>
-                        {% endfor %}
-                </tbody>
+                    {% set _ = phase_tasks[phase].append(task) %}
+                {% endfor %}
+                {% for phase, phase_group in phase_tasks.items() %}
+                    <tr class="table-secondary">
+                        <td colspan="12"><strong>Phase: {{ phase }}</strong></td>
+                    </tr>
+                    {% for task in phase_group %}
+                    <tr>
+                        <td>{{ task.id }}</td>
+                        <td>{{ task.name }}</td>
+                        <td>{{ task.start }}</td>
+                        <td>{{ task.responsible }}</td>
+                        <td>{{ task.duration }}</td>
+                        <td>{{ task.status }}</td>
+                        <td>
+                            <div class="progress" style="height: 20px; background: var(--secondary-color);">
+                                <div class="progress-bar" role="progressbar" style="width: {{ task.percent_complete|default(0) }}%; background: var(--primary-color);" aria-valuenow="{{ task.percent_complete|default(0) }}" aria-valuemin="0" aria-valuemax="100">
+                                    {{ task.percent_complete|default(0) }}%
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ task.milestone }}</td>
+                        <td>
+                            {% if task.external_task %}<span class="badge bg-danger">Task</span>{% endif %}
+                            {% if task.external_milestone %}<span class="badge bg-danger">Milestone</span>{% endif %}
+                        </td>
+                        <td>{{ task.parent }}</td>
+                        <td>{{ task.depends_on }}</td>
+                        <td>
+                            {% if task.attachments and task.attachments|length > 0 %}
+                                {% for fname in task.attachments %}
+                                    <a href="/static/uploads/{{ fname|urlencode }}" target="_blank">{{ fname }}</a>{% if not loop.last %}, {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">None</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-secondary edit-task-btn" data-task-idx="{{ loop.index0 }}">Edit</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-task-btn ms-1" data-task-idx="{{ loop.index0 }}">Delete</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% endfor %}
+            </tbody>
         </table>
 
         <!-- Edit Task Modal -->
@@ -157,6 +203,14 @@
                             <div class="mb-2">
                                 <label class="form-label">Milestone</label>
                                 <input type="text" class="form-control" name="milestone" id="edit_milestone">
+                            </div>
+                            <div class="mb-2 form-check">
+                                <input class="form-check-input" type="checkbox" name="external_task" id="edit_external_task">
+                                <label class="form-check-label" for="edit_external_task">External Task</label>
+                            </div>
+                            <div class="mb-2 form-check">
+                                <input class="form-check-input" type="checkbox" name="external_milestone" id="edit_external_milestone">
+                                <label class="form-check-label" for="edit_external_milestone">External Milestone</label>
                             </div>
                             <div class="mb-2">
                                 <label class="form-label">Parent</label>
@@ -205,6 +259,40 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Get tasks data from a JS variable injected by Jinja
     const tasksData = {{ tasks|tojson }};
+    const hideToggle = document.getElementById('hideExternalTasksToggle');
+    function applyExternalFilter() {
+        const hide = hideToggle.checked;
+        // Iterate rows (skip phase header rows with class table-secondary)
+        document.querySelectorAll('table tbody tr').forEach(function(row) {
+            if (row.classList.contains('table-secondary')) return; // phase header
+            const hasExternal = row.querySelector('.badge.bg-danger') !== null;
+            if (hide && hasExternal) {
+                row.style.display = 'none';
+            } else {
+                row.style.display = '';
+            }
+        });
+        // Hide phase header if all subsequent task rows (until next header) hidden
+        const headers = Array.from(document.querySelectorAll('table tbody tr.table-secondary'));
+        headers.forEach(function(header) {
+            let sibling = header.nextElementSibling;
+            let anyVisible = false;
+            while (sibling && !sibling.classList.contains('table-secondary')) {
+                if (sibling.style.display !== 'none') { anyVisible = true; break; }
+                sibling = sibling.nextElementSibling;
+            }
+            header.style.display = anyVisible ? '' : (hide ? 'none' : '');
+        });
+    }
+    hideToggle.addEventListener('change', applyExternalFilter);
+    // Persist preference via localStorage
+    const savedPref = localStorage.getItem('hideExternalTasks');
+    if (savedPref === '1') { hideToggle.checked = true; }
+    hideToggle.addEventListener('change', () => {
+        localStorage.setItem('hideExternalTasks', hideToggle.checked ? '1' : '0');
+        applyExternalFilter();
+    });
+    applyExternalFilter();
     // Edit button logic
     document.querySelectorAll('.edit-task-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
@@ -234,6 +322,8 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('edit_notes').value = tasksData[idx].notes || '';
             document.getElementById('edit_pdf_page').value = tasksData[idx].pdf_page || '';
             document.getElementById('edit_document_links').value = (tasksData[idx].document_links || []).join(', ');
+            document.getElementById('edit_external_task').checked = !!tasksData[idx].external_task;
+            document.getElementById('edit_external_milestone').checked = !!tasksData[idx].external_milestone;
             // Attachments
             const attachments = tasksData[idx].attachments || [];
             const listDiv = document.getElementById('edit_attachments_list');

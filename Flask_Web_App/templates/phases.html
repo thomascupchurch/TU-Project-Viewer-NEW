@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container my-4" style="max-width: 600px;">
+    <h2 class="mb-4">Phases</h2>
+    <form method="post" class="mb-4">
+        <div class="input-group">
+            <input type="text" class="form-control" name="phase_name" placeholder="New Phase Name" required>
+            <button type="submit" class="btn btn-primary">Add Phase</button>
+        </div>
+    </form>
+    <ul class="list-group">
+        {% for phase in phases %}
+        <li class="list-group-item">{{ phase.name }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

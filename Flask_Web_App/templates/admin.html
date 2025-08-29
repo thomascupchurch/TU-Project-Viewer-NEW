@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Admin Dashboard</h2>
+    <h4 class="mt-4">Users</h4>
+    <table class="table table-bordered">
+        <thead><tr><th>Username</th><th>Admin</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.username }}</td>
+            <td>{% if user.is_admin %}✔️{% else %}❌{% endif %}</td>
+            <td>
+                {% if not user.is_admin %}
+                <a href="{{ url_for('promote_user', user_id=user.id) }}" class="btn btn-sm btn-success">Promote to Admin</a>
+                {% endif %}
+                <a href="{{ url_for('delete_user', user_id=user.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete user?');">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <h4 class="mt-4">All Tasks</h4>
+    <table class="table table-bordered">
+        <thead><tr><th>ID</th><th>Name</th><th>User</th><th>Status</th><th>External Task</th><th>External Milestone</th></tr></thead>
+        <tbody>
+        {% for task in tasks %}
+        <tr>
+            <td>{{ task.id }}</td>
+            <td>{{ task.name }}</td>
+            <td>{{ task.user_id }}</td>
+            <td>{{ task.status }}</td>
+            <td>{% if task.external_task %}<span class="badge bg-danger">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</td>
+            <td>{% if task.external_milestone %}<span class="badge bg-danger">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

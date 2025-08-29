@@ -6,26 +6,201 @@ import csv
 import os
 import io
 import json
+
 import matplotlib
 matplotlib.use('Agg')  # Use non-GUI backend for server
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response, jsonify
+from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response, jsonify, session
 import zipfile
 import pytz
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+app.secret_key = 'your_secret_key_here'  # Change this in production
 
-# --- Tasks List and Creation Page ---
+# --- Flask-Login setup ---
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+# --- User Model ---
+import uuid
+USERS_FILE = os.path.join(os.path.dirname(__file__), 'users.json')
+users = []
+
+class User(UserMixin):
+    def __init__(self, id, username, password_hash):
+        self.id = id
+        self.username = username
+        self.password_hash = password_hash
+    def get_id(self):
+        return str(self.id)
+
+def load_users():
+    global users
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, 'r', encoding='utf-8') as f:
+            users = json.load(f)
+    else:
+        users = []
+
+def save_users():
+    with open(USERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(users, f, indent=2, ensure_ascii=False)
+
+@login_manager.user_loader
+def load_user(user_id):
+    for u in users:
+        if str(u['id']) == str(user_id):
+            return User(u['id'], u['username'], u['password_hash'])
+    return None
+
+############################################
+# Authentication & User Management Routes  #
+############################################
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    load_users()
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        if not username or not password:
+            flash('Username and password are required.')
+            return render_template('register.html')
+        if any(u['username'].lower() == username.lower() for u in users):
+            flash('Username already exists.')
+            return render_template('register.html')
+        user_id = str(uuid.uuid4())
+        password_hash = generate_password_hash(password)
+        users.append({'id': user_id, 'username': username, 'password_hash': password_hash, 'is_admin': False})
+        save_users()
+        flash('Registration successful. Please log in.')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+# --- Admin-only decorator ---
+from functools import wraps
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('login'))
+        user = next((u for u in users if str(u['id']) == str(current_user.get_id())), None)
+        if not user or not user.get('is_admin', False):
+            flash('Admin access required.')
+            return redirect(url_for('tasks_page'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# --- Admin dashboard ---
+@app.route('/admin')
+@login_required
+@admin_required
+def admin_dashboard():
+    load_users()
+    load_tasks()
+    return render_template('admin.html', users=users, tasks=tasks)
+
+# --- Promote user to admin ---
+@app.route('/admin/promote/<user_id>')
+@login_required
+@admin_required
+def promote_user(user_id):
+    load_users()
+    for u in users:
+        if str(u['id']) == str(user_id):
+            u['is_admin'] = True
+            save_users()
+            flash(f"User {u['username']} promoted to admin.")
+            break
+    return redirect(url_for('admin_dashboard'))
+
+# --- Delete user ---
+@app.route('/admin/delete_user/<user_id>')
+@login_required
+@admin_required
+def delete_user(user_id):
+    load_users()
+    global users
+    users = [u for u in users if str(u['id']) != str(user_id)]
+    save_users()
+    flash('User deleted.')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    load_users()
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        user = next((u for u in users if u['username'] == username), None)
+        if user and check_password_hash(user['password_hash'], password):
+            login_user(User(user['id'], user['username'], user['password_hash']))
+            return redirect(url_for('tasks_page'))
+        else:
+            flash('Invalid username or password.')
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Logged out.')
+    return redirect(url_for('login'))
+
+PHASES_FILE = os.path.join(os.path.dirname(__file__), 'phases.json')
+phases = []
+
+def load_phases():
+    global phases
+    if os.path.exists(PHASES_FILE):
+        with open(PHASES_FILE, 'r', encoding='utf-8') as f:
+            phases = json.load(f)
+    else:
+        phases = []
+
+def save_phases():
+    with open(PHASES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(phases, f, indent=2, ensure_ascii=False)
+
+# --- Phase creation ---
+@app.route('/phases', methods=['GET', 'POST'])
+@login_required
+def phases_page():
+    load_phases()
+    if request.method == 'POST':
+        phase_name = request.form.get('phase_name', '').strip()
+        if phase_name and not any(p['name'] == phase_name for p in phases):
+            phases.append({'id': len(phases) + 1, 'name': phase_name, 'user_id': current_user.get_id()})
+            save_phases()
+    return render_template('phases.html', phases=[p for p in phases if p['user_id'] == current_user.get_id()])
+from flask_login import login_required, current_user
+
 @app.route('/tasks', methods=['GET', 'POST'])
+@login_required
 def tasks_page():
     print("HIT /tasks route")
     load_tasks()
+    load_phases()
     alert_message = None
+    # Only show tasks for the current user
+    user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id() or (current_user.get_id() in t.get('shared_with', []))]
     if request.method == 'POST':
         # Task creation or editing from form
+        share_with = request.form.get('share_with', '').strip()
+        share_with_ids = []
+        if share_with:
+            load_users()
+            usernames = [u.strip() for u in share_with.split(',') if u.strip()]
+            for uname in usernames:
+                user = next((u for u in users if u['username'] == uname), None)
+                if user:
+                    share_with_ids.append(user['id'])
         name = request.form.get('name', '').strip()
+        phase = request.form.get('phase', '').strip()
         start = request.form.get('start', '').strip()
         responsible = request.form.get('responsible', '').strip()
         duration = request.form.get('duration', '').strip()
@@ -38,6 +213,8 @@ def tasks_page():
         notes = request.form.get('notes', '').strip()
         pdf_page = request.form.get('pdf_page', '').strip()
         document_links = request.form.get('document_links', '').strip()
+        external_task = True if request.form.get('external_task') == 'on' else False
+        external_milestone = True if request.form.get('external_milestone') == 'on' else False
         edit_idx = request.form.get('edit_idx', '').strip()
         # Convert document_links to list
         links_list = [l.strip() for l in document_links.split(',') if l.strip()]
@@ -56,7 +233,7 @@ def tasks_page():
         dep_task = None
         dep_end_date = None
         if depends_on:
-            dep_task = next((t for t in tasks if t['name'] == depends_on), None)
+            dep_task = next((t for t in tasks if t['name'] == depends_on and t.get('user_id') == current_user.get_id()), None)
             if dep_task and dep_task.get('start') and dep_task.get('duration'):
                 try:
                     dep_start = datetime.strptime(dep_task['start'], '%Y-%m-%d')
@@ -72,12 +249,16 @@ def tasks_page():
         if alert_message:
             # Render page with alert, do not save
             load_tasks()
-            return render_template('tasks.html', tasks=tasks, alert_message=alert_message)
+            user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id()]
+            return render_template('tasks.html', tasks=user_tasks, alert_message=alert_message, phases=phases)
 
-        # If editing, update the existing task
+        # If editing, update the existing task (only if owned by user)
         if edit_idx.isdigit() and int(edit_idx) < len(tasks):
             idx = int(edit_idx)
             task = tasks[idx]
+            if task.get('user_id') != current_user.get_id():
+                flash('You can only edit your own tasks.')
+                return redirect(url_for('tasks_page'))
             # Merge new attachments with existing
             merged_attachments = list(task.get('attachments', []))
             for fname in attachment_filenames:
@@ -85,6 +266,7 @@ def tasks_page():
                     merged_attachments.append(fname)
             task['attachments'] = merged_attachments
             task['name'] = name
+            task['phase'] = phase
             task['start'] = start
             task['responsible'] = responsible
             task['duration'] = duration
@@ -97,13 +279,19 @@ def tasks_page():
             task['notes'] = notes
             task['pdf_page'] = pdf_page
             task['document_links'] = links_list
+            task['external_task'] = external_task
+            task['external_milestone'] = external_milestone
+            # Update sharing
+            task['shared_with'] = share_with_ids
             save_tasks()
         else:
             # Create new task
             if name:
                 tasks.append({
                     'id': len(tasks) + 1,
+                    'user_id': current_user.get_id(),
                     'name': name,
+                    'phase': phase,
                     'start': start,
                     'responsible': responsible,
                     'status': status or 'Not Started',
@@ -116,11 +304,14 @@ def tasks_page():
                     'depends_on': depends_on,
                     'resources': resources,
                     'pdf_page': pdf_page,
-                    'document_links': links_list
+                    'document_links': links_list,
+            'external_task': external_task,
+            'external_milestone': external_milestone,
+                    'shared_with': share_with_ids
                 })
                 save_tasks()
         return redirect(url_for('tasks_page'))
-    return render_template('tasks.html', tasks=tasks, alert_message=alert_message)
+    return render_template('tasks.html', tasks=user_tasks, alert_message=alert_message, phases=phases)
 
 # --- iCalendar Export Route ---
 @app.route('/calendar_export_ics')
@@ -173,6 +364,12 @@ def timeline_page():
     load_tasks()
     timeline_items = get_project_timeline_data(tasks)
     return render_template('timeline.html', tasks=tasks, timeline_items=timeline_items)
+
+@app.route('/control-panel')
+@login_required
+def control_panel_page():
+    # No server-side data needed beyond base template color handling.
+    return render_template('control_panel.html')
 
 # --- Calendar View Route ---
 @app.route('/calendar')
@@ -250,6 +447,8 @@ def load_tasks():
                             ('milestone', ''),
                             ('attachments', []),
                             ('document_links', []),
+                            ('external_task', False),
+                            ('external_milestone', False),
                         ]:
                             if k not in t:
                                 t[k] = default
@@ -394,23 +593,52 @@ def compute_critical_path(tasks):
 
 def parse_tasks_for_gantt(tasks):
     # Flatten tasks into a sorted list with indentation for sub-tasks
+    # Group by phase, then by task/sub-task
     def collect(task, all_tasks, depth):
         try:
             start = datetime.strptime(task['start'], '%Y-%m-%d')
             duration = int(task.get('duration', 1) or 1)
         except Exception:
             return
-        is_milestone = bool(task.get('milestone'))
-        all_tasks.append({'name': ('    ' * depth) + task['name'], 'start': start, 'duration': duration, 'is_milestone': is_milestone})
-        # Find children by name (not id)
-        children = [t for t in tasks if (t.get('parent') or '') == task['name']]
+        is_milestone = bool(task.get('milestone')) or bool(task.get('external_milestone'))
+        all_tasks.append({
+            'name': ('    ' * depth) + task['name'],
+            'start': start,
+            'duration': duration,
+            'is_milestone': is_milestone,
+            'is_phase': False,
+            'external_task': bool(task.get('external_task')),
+            'external_milestone': bool(task.get('external_milestone'))
+        })
+        # Find sub-tasks (children)
+        children = [t for t in tasks if (t.get('parent') or '') == task['name'] and t.get('phase', '') == task.get('phase', '')]
         for child in children:
             collect(child, all_tasks, depth+1)
-    # Find top-level tasks (parent is empty, None, or 'None')
-    top_level = [t for t in tasks if not t.get('parent') or t.get('parent') in ('', None, 'None')]
+
+    # Group tasks by phase
+    phase_map = {}
+    for t in tasks:
+        phase = t.get('phase') or 'No Phase'
+        if phase not in phase_map:
+            phase_map[phase] = []
+        phase_map[phase].append(t)
+
     all_tasks = []
-    for t in top_level:
-        collect(t, all_tasks, 0)
+    for phase, phase_tasks in phase_map.items():
+        # Add phase as a top-level row (no date, no duration)
+        all_tasks.append({
+            'name': phase,
+            'start': None,
+            'duration': 0,
+            'is_milestone': False,
+            'is_phase': True,
+            'external_task': False,
+            'external_milestone': False
+        })
+        # Find top-level tasks (no parent)
+        top_level = [t for t in phase_tasks if not t.get('parent') or t.get('parent') in ('', None, 'None')]
+        for t in top_level:
+            collect(t, all_tasks, 1)
     return all_tasks
 
 @app.route('/gantt')
@@ -418,17 +646,78 @@ def gantt_page():
     load_tasks()
     return render_template('gantt.html', tasks=tasks)
 
+# --- Interactive Gantt (frontend JS-based) ---
+@app.route('/gantt_interactive')
+def gantt_interactive_page():
+    load_tasks()
+    return render_template('gantt_interactive.html')
+
+@app.route('/gantt_data')
+def gantt_data():
+    """Return task data formatted for interactive Gantt usage.
+    Each task includes computed finish date (start + duration days) and flags.
+    Milestones represented with finish == start.
+    """
+    load_tasks()
+    out = []
+    for t in tasks:
+        start = t.get('start')
+        duration_raw = t.get('duration', 0)
+        try:
+            duration = int(duration_raw) if str(duration_raw).strip() != '' else 0
+        except Exception:
+            duration = 0
+        finish = None
+        if start:
+            try:
+                dt = datetime.strptime(start, '%Y-%m-%d')
+                if t.get('milestone') or t.get('external_milestone'):
+                    finish_dt = dt  # zero-length for milestone
+                else:
+                    finish_dt = dt + timedelta(days=duration if duration > 0 else 0)
+                finish = finish_dt.strftime('%Y-%m-%d')
+            except Exception:
+                finish = start
+        try:
+            pc_val = float(t.get('percent_complete', 0))
+        except Exception:
+            pc_val = 0.0
+        out.append({
+            'id': t.get('id'),
+            'name': t.get('name'),
+            'phase': t.get('phase') or 'No Phase',
+            'start': start,
+            'finish': finish,
+            'duration': duration,
+            'percent_complete': pc_val,
+            'status': t.get('status'),
+            'milestone': bool(t.get('milestone')) or bool(t.get('external_milestone')),
+            'external_task': bool(t.get('external_task')),
+            'external_milestone': bool(t.get('external_milestone')),
+            'depends_on': t.get('depends_on'),
+            'parent': t.get('parent'),
+            'responsible': t.get('responsible'),
+            'notes': t.get('notes'),
+            'resources': t.get('resources'),
+        })
+    return jsonify(out)
+
 @app.route('/gantt.png')
 def gantt_chart():
     print("[DEBUG] Entered gantt_chart route")
     try:
         print("[DEBUG] Tasks before rendering Gantt chart:", json.dumps(tasks, indent=2, ensure_ascii=False))
-        parsed = parse_tasks_for_gantt(tasks)
+        from flask import request as flask_request
+        # Filtering: allow hiding external tasks/milestones
+        hide_external = flask_request.args.get('hide_external', '0') in ('1', 'true', 'True')
+        base_tasks = tasks
+        if hide_external:
+            base_tasks = [t for t in tasks if not t.get('external_task') and not t.get('external_milestone')]
+        parsed = parse_tasks_for_gantt(base_tasks)
         critical = compute_critical_path(tasks)
         fig, ax = plt.subplots(figsize=(24, 12))
         plt.rcParams.update({'font.size': 20})
         # Get color scheme from query params or use defaults
-        from flask import request as flask_request
         primary_color = flask_request.args.get('primary', '#4287f5')
         secondary_color = flask_request.args.get('secondary', '#FF8200')
         if not parsed:
@@ -437,12 +726,19 @@ def gantt_chart():
             fig.tight_layout()
         else:
             names = [t['name'] for t in parsed]
-            starts = [mdates.date2num(t['start']) for t in parsed]
+            # For phases, no start/duration; for tasks/sub-tasks, as before
+            starts = [mdates.date2num(t['start']) if t.get('start') else None for t in parsed]
             durations = [int(t['duration']) if not isinstance(t['duration'], int) else t['duration'] for t in parsed]
             y_pos = list(range(len(parsed)))
             for i, t in enumerate(parsed):
-                if t.get('is_milestone'):
-                    ax.scatter(starts[i] + durations[i], i, marker='D', s=120, color=secondary_color, edgecolor='black', zorder=5, label='Milestone' if i == 0 else "")
+                if t.get('is_phase'):
+                    # Draw phase as a label only
+                    ax.text(0, i, t['name'], va='center', ha='left', fontsize=18, fontweight='bold', color='black', bbox=dict(facecolor='#f0f0f0', edgecolor='gray', boxstyle='round,pad=0.2'))
+                elif t.get('is_milestone'):
+                    # External milestones forced red
+                    milestone_color = 'red' if t.get('external_milestone') else secondary_color
+                    ax.scatter(starts[i] + durations[i], i, marker='D', s=140, color=milestone_color, edgecolor='black', zorder=6,
+                               label='Milestone' if i == 0 else "")
                 else:
                     # Find the original task to get percent_complete
                     task_name = t['name'].lstrip()
@@ -454,12 +750,16 @@ def gantt_chart():
                     percent = max(0, min(percent, 100))
                     dur = int(t['duration']) if not isinstance(t['duration'], int) else t['duration']
                     done_dur = dur * percent / 100.0
-                    # Draw completed (primary color) part
-                    if done_dur > 0:
-                        ax.barh(i, done_dur, left=starts[i], height=0.4, align='center', color=primary_color, edgecolor='black')
-                    # Draw remaining (secondary color) part
-                    if done_dur < dur:
-                        ax.barh(i, dur - done_dur, left=starts[i] + done_dur, height=0.4, align='center', color=secondary_color, edgecolor='black')
+                    # External tasks always red full bar
+                    if t.get('external_task'):
+                        ax.barh(i, dur, left=starts[i], height=0.45, align='center', color='red', edgecolor='black', hatch='///')
+                    else:
+                        # Draw completed (primary color) part
+                        if done_dur > 0:
+                            ax.barh(i, done_dur, left=starts[i], height=0.4, align='center', color=primary_color, edgecolor='black')
+                        # Draw remaining (secondary color) part
+                        if done_dur < dur:
+                            ax.barh(i, dur - done_dur, left=starts[i] + done_dur, height=0.4, align='center', color=secondary_color, edgecolor='black')
             ax.set_yticks(y_pos)
             ax.set_yticklabels(names)
             ax.set_xlabel('Date')
@@ -468,7 +768,7 @@ def gantt_chart():
             fig.autofmt_xdate()
             ax.invert_yaxis()
             # Draw parent-child arrows
-            name_to_info = {t['name'].lstrip(): (i, starts[i], durations[i]) for i, t in enumerate(parsed)}
+            name_to_info = {t['name'].lstrip(): (i, starts[i], durations[i]) for i, t in enumerate(parsed) if not t.get('is_phase')}
             for t in tasks:
                 parent = t.get('parent')
                 if parent and parent not in ('', None, 'None'):
@@ -516,6 +816,17 @@ def gantt_chart():
                     ax.annotate('', xy=(child_start, child_y), xytext=(dep_end, dep_y),
                                 arrowprops=dict(arrowstyle='->', color='red', lw=1.5, linestyle='dashed', shrinkA=5, shrinkB=5))
             fig.tight_layout()
+            # Legend creation
+            import matplotlib.patches as mpatches
+            legend_items = []
+            legend_items.append(mpatches.Patch(color=primary_color, label='Completed Portion'))
+            legend_items.append(mpatches.Patch(color=secondary_color, label='Remaining Portion'))
+            legend_items.append(mpatches.Patch(facecolor='red', edgecolor='black', hatch='///', label='External Task'))
+            legend_items.append(plt.Line2D([0],[0], marker='D', color='w', markerfacecolor=secondary_color, markeredgecolor='black', markersize=12, label='Milestone'))
+            legend_items.append(plt.Line2D([0],[0], marker='D', color='w', markerfacecolor='red', markeredgecolor='black', markersize=12, label='External Milestone'))
+            legend_items.append(plt.Line2D([0],[0], color='blue', lw=2, label='Parent → Child'))
+            legend_items.append(plt.Line2D([0],[0], color='red', lw=2, linestyle='dashed', label='Dependency'))
+            ax.legend(handles=legend_items, loc='upper left', bbox_to_anchor=(1.01, 1), frameon=True, title='Legend')
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
         plt.close(fig)
@@ -589,10 +900,10 @@ def gantt_export(fmt):
 @app.route('/download_csv')
 def download_csv():
     si = io.StringIO()
-    writer = csv.DictWriter(si, fieldnames=['name', 'responsible', 'start', 'duration', 'depends_on', 'resources', 'notes', 'pdf_page', 'parent'])
+    writer = csv.DictWriter(si, fieldnames=['name', 'responsible', 'start', 'duration', 'depends_on', 'resources', 'notes', 'pdf_page', 'parent', 'external_task', 'external_milestone'])
     writer.writeheader()
     for t in tasks:
-        row = {k: t.get(k, '') for k in ['name', 'responsible', 'start', 'duration', 'depends_on', 'resources', 'notes', 'pdf_page', 'parent']}
+        row = {k: t.get(k, '') for k in ['name', 'responsible', 'start', 'duration', 'depends_on', 'resources', 'notes', 'pdf_page', 'parent', 'external_task', 'external_milestone']}
         writer.writerow(row)
     output = make_response(si.getvalue())
     output.headers['Content-Disposition'] = 'attachment; filename=project.csv'
@@ -649,6 +960,8 @@ def index():
                                         ('milestone', ''),
                                         ('attachments', []),
                                         ('document_links', []),
+                                        ('external_task', False),
+                                        ('external_milestone', False),
                                     ]:
                                         if k not in t:
                                             t[k] = default
@@ -787,6 +1100,8 @@ def index():
                     'milestone': milestone,
                     'attachments': attachment_filenames,
                     'document_links': links_list,
+                    'external_task': False,
+                    'external_milestone': False,
                 }
                 tasks.append(new_task)
                 next_task_id += 1
@@ -829,6 +1144,84 @@ def update_task_status():
     if not found:
         print(f"[DEBUG] Task id {task_id} not found in tasks: {[t['id'] for t in tasks]}")
     return jsonify({'success': False, 'error': 'Task not found'})
+
+# --- Update Task Fields (start, duration, percent_complete) for interactive Gantt ---
+@app.route('/update_task_fields', methods=['POST'])
+@login_required
+def update_task_fields():
+    data = request.get_json(force=True, silent=True) or {}
+    task_id = data.get('id')
+    if task_id is None:
+        return jsonify({'success': False, 'error': 'Missing id'}), 400
+    try:
+        task_id = int(task_id)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Invalid id'}), 400
+    start = data.get('start')  # YYYY-MM-DD
+    duration = data.get('duration')
+    percent = data.get('percent_complete')
+    updated = False
+    adjusted = False
+    adjusted_start = None
+    for t in tasks:
+        if t.get('id') == task_id:
+            # Ownership check: user must own or be admin
+            owner_id = t.get('user_id') or ''
+            user_rec = next((u for u in users if str(u['id']) == str(current_user.get_id())), None)
+            is_admin = user_rec.get('is_admin', False) if user_rec else False
+            if owner_id and owner_id != current_user.get_id() and not is_admin:
+                return jsonify({'success': False, 'error': 'Not authorized'}), 403
+            if start:
+                # Basic validation format
+                try:
+                    datetime.strptime(start, '%Y-%m-%d')
+                    t['start'] = start
+                except Exception:
+                    return jsonify({'success': False, 'error': 'Invalid start date'}), 400
+            if duration is not None:
+                try:
+                    d = int(duration)
+                    if d < 0:
+                        return jsonify({'success': False, 'error': 'Duration cannot be negative'}), 400
+                    t['duration'] = d
+                except Exception:
+                    return jsonify({'success': False, 'error': 'Invalid duration'}), 400
+            if percent is not None:
+                try:
+                    p = float(percent)
+                    p = max(0, min(100, p))
+                    t['percent_complete'] = p
+                    # Auto status update
+                    if p >= 100:
+                        t['status'] = 'Completed'
+                    elif p > 0 and t.get('status') == 'Not Started':
+                        t['status'] = 'In Progress'
+                except Exception:
+                    return jsonify({'success': False, 'error': 'Invalid percent_complete'}), 400
+            # Dependency constraint enforcement: ensure t['start'] >= dependency end
+            dep_name = t.get('depends_on')
+            if dep_name:
+                dep_task = next((dt for dt in tasks if dt.get('name') == dep_name), None)
+                if dep_task and dep_task.get('start'):
+                    try:
+                        dep_start_dt = datetime.strptime(dep_task['start'], '%Y-%m-%d')
+                        dep_dur = int(dep_task.get('duration') or 0)
+                        dep_end_dt = dep_start_dt + timedelta(days=dep_dur)
+                        if t.get('start'):
+                            this_start_dt = datetime.strptime(t['start'], '%Y-%m-%d')
+                            if this_start_dt < dep_end_dt:
+                                # Adjust start to dependency end
+                                t['start'] = dep_end_dt.strftime('%Y-%m-%d')
+                                adjusted = True
+                                adjusted_start = t['start']
+                    except Exception:
+                        pass
+            updated = True
+            save_tasks()
+            break
+    if not updated:
+        return jsonify({'success': False, 'error': 'Task not found'}), 404
+    return jsonify({'success': True, 'adjusted': adjusted, 'start': adjusted_start or t.get('start'), 'duration': t.get('duration'), 'percent_complete': t.get('percent_complete')})
 
 @app.route('/download_project')
 def download_project():

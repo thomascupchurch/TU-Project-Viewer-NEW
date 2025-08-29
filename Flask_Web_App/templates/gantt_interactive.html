@@ -1,0 +1,404 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Interactive Gantt</h2>
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <button id="zoomOut" class="btn btn-sm btn-outline-secondary">- Zoom</button>
+  <button id="zoomIn" class="btn btn-sm btn-outline-secondary">+ Zoom</button>
+  <div class="form-check ms-3">
+    <input class="form-check-input" type="checkbox" id="toggleExternal" checked>
+    <label class="form-check-label" for="toggleExternal">Show External</label>
+  </div>
+  <div class="form-check ms-3">
+    <input class="form-check-input" type="checkbox" id="toggleMilestones" checked>
+    <label class="form-check-label" for="toggleMilestones">Show Milestones</label>
+  </div>
+</div>
+<div id="ganttContainer" style="width:100%; height:650px; border:1px solid #ddd; position:relative; overflow:auto; background:#fff;"></div>
+<small class="text-muted">Drag edges to change duration, drag bar to move. Milestones are diamonds. External items in red with hatch.</small>
+
+<!-- Modal for editing quick fields -->
+<div class="modal fade" id="taskModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="taskModalTitle">Task</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="taskForm">
+          <input type="hidden" id="taskId">
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label">Name</label>
+              <input type="text" id="taskName" class="form-control" readonly>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Start</label>
+              <input type="date" id="taskStart" class="form-control">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Duration (days)</label>
+              <input type="number" id="taskDuration" class="form-control" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">% Complete</label>
+              <input type="number" id="taskPercent" class="form-control" min="0" max="100">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Responsible</label>
+              <input type="text" id="taskResp" class="form-control" readonly>
+            </div>
+            <div class="col-md-12">
+              <label class="form-label">Notes</label>
+              <textarea id="taskNotes" class="form-control" rows="3" readonly></textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" id="saveTaskBtn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+// Simple vanilla JS interactive Gantt (lightweight)
+// Data fetch and rendering
+let allTasks = [];
+let visibleTasks = [];
+let dayWidth = 28; // pixels per day (zoom)
+const rowHeight = 34;
+const headerHeight = 40;
+const leftColWidth = 260;
+
+function fetchData() {
+  fetch('/gantt_data').then(r=>r.json()).then(data => {
+    allTasks = data;
+    computeDerived();
+    filterTasks();
+    render();
+  });
+}
+
+function computeDerived() {
+  allTasks.forEach(t => {
+    if (!t.start) return;
+    const s = new Date(t.start + 'T00:00:00');
+    if (t.finish) {
+      t.finishDate = new Date(t.finish + 'T00:00:00');
+    } else {
+      t.finishDate = new Date(s.getTime());
+    }
+    t.durationDays = Math.max(0, Math.round((t.finishDate - s)/(1000*60*60*24)) || t.duration || 0);
+  });
+}
+
+function filterTasks() {
+  const showExt = document.getElementById('toggleExternal').checked;
+  const showMilestones = document.getElementById('toggleMilestones').checked;
+  visibleTasks = allTasks.filter(t => {
+    if (!showExt && (t.external_task || t.external_milestone)) return false;
+    if (!showMilestones && t.milestone) return false;
+    return true;
+  });
+}
+
+function minStart() {
+  let d = null;
+  visibleTasks.forEach(t=>{if(t.start){const ds=new Date(t.start+'T00:00:00'); if(!d||ds<d)d=ds;}});
+  return d || new Date();
+}
+
+function maxFinish() {
+  let d = null;
+  visibleTasks.forEach(t=>{if(t.finish){const df=new Date(t.finish+'T00:00:00'); if(!d||df>d)d=df;}});
+  return d || new Date();
+}
+
+function render() {
+  const container = document.getElementById('ganttContainer');
+  container.innerHTML='';
+  const startDate = minStart();
+  const endDate = maxFinish();
+  const totalDays = Math.max(1, Math.round((endDate - startDate)/(1000*60*60*24))+1);
+
+  // Header (dates)
+  const header = document.createElement('div');
+  header.style.position='sticky';
+  header.style.top='0';
+  header.style.left='0';
+  header.style.background='#fafafa';
+  header.style.zIndex='10';
+  header.style.display='flex';
+  header.style.borderBottom='1px solid #ccc';
+  header.style.height= headerHeight+'px';
+  // Left column header
+  const leftHeader = document.createElement('div');
+  leftHeader.style.width= leftColWidth+'px';
+  leftHeader.style.flex='0 0 auto';
+  leftHeader.style.display='flex';
+  leftHeader.style.alignItems='center';
+  leftHeader.style.padding='0 6px';
+  leftHeader.innerHTML='<strong>Task / Phase</strong>';
+  header.appendChild(leftHeader);
+  // Date scale
+  const scale = document.createElement('div');
+  scale.style.flex='1';
+  scale.style.position='relative';
+  scale.style.height='100%';
+  for(let i=0;i<totalDays;i++){
+    const d = new Date(startDate.getTime()+ i*86400000);
+    const cell = document.createElement('div');
+    cell.style.position='absolute';
+    cell.style.left= (i*dayWidth)+'px';
+    cell.style.top='0';
+    cell.style.width= dayWidth+'px';
+    cell.style.height='100%';
+    cell.style.borderLeft='1px solid #eee';
+    cell.style.fontSize='10px';
+    cell.style.textAlign='center';
+    cell.style.paddingTop='2px';
+    cell.textContent = d.toISOString().slice(5,10); // MM-DD
+    scale.appendChild(cell);
+  }
+  header.appendChild(scale);
+  container.appendChild(header);
+
+  // Rows
+  visibleTasks.forEach((t, idx) => {
+    const row = document.createElement('div');
+    row.style.position='relative';
+    row.style.display='flex';
+    row.style.height= rowHeight+'px';
+    row.style.borderBottom='1px solid #f1f1f1';
+    row.dataset.id = t.id;
+
+    const left = document.createElement('div');
+    left.style.width= leftColWidth+'px';
+    left.style.flex='0 0 auto';
+    left.style.display='flex';
+    left.style.alignItems='center';
+    left.style.fontSize='13px';
+    left.style.padding='0 6px';
+    left.innerHTML = `<span class="${t.milestone?'text-decoration-underline':''}">${t.phase} :: ${t.name}</span>`;
+    row.appendChild(left);
+
+    const chartCell = document.createElement('div');
+    chartCell.style.flex='1';
+    chartCell.style.position='relative';
+
+    if (t.start && t.finish) {
+      const sDate = new Date(t.start+'T00:00:00');
+      const offsetDays = Math.round((sDate - startDate)/86400000);
+      const durDays = Math.max(0, Math.round((new Date(t.finish+'T00:00:00') - sDate)/86400000));
+
+      if (t.milestone) {
+        const diamond = document.createElement('div');
+        diamond.className='gantt-milestone';
+        const size = 18;
+        diamond.style.width= size+'px';
+        diamond.style.height= size+'px';
+        diamond.style.position='absolute';
+        diamond.style.left= (offsetDays*dayWidth + (dayWidth/2) - size/2)+'px';
+        diamond.style.top= (rowHeight/2 - size/2)+'px';
+        diamond.style.transform='rotate(45deg)';
+        diamond.style.background= t.external_milestone ? 'red' : 'var(--secondary-color)';
+        diamond.style.border='2px solid #222';
+        diamond.title = `${t.name} (${t.start})`;
+        diamond.addEventListener('click', ()=>openTaskModal(t));
+        chartCell.appendChild(diamond);
+      } else {
+        const bar = document.createElement('div');
+        bar.className='gantt-bar';
+        const w = Math.max(dayWidth * (durDays||1), dayWidth*0.6);
+        bar.style.position='absolute';
+        bar.style.left= (offsetDays*dayWidth)+'px';
+        bar.style.top= '6px';
+        bar.style.height= (rowHeight-12)+'px';
+        bar.style.width= w+'px';
+        bar.style.background= t.external_task ? 'red' : 'var(--secondary-color)';
+        bar.style.border='1px solid #333';
+        bar.style.borderRadius='4px';
+        bar.style.cursor='move';
+        if (t.external_task) {
+          bar.style.backgroundImage= 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0 8px, rgba(255,255,255,0) 8px 16px)';
+        } else {
+          // show completed portion
+          const inner = document.createElement('div');
+          inner.style.height='100%';
+          inner.style.width= (Math.min(100, Math.max(0, t.percent_complete))/100)*100+'%';
+          inner.style.background='var(--primary-color)';
+          inner.style.borderRight='1px solid rgba(0,0,0,0.2)';
+          inner.style.borderRadius='4px 0 0 4px';
+          bar.appendChild(inner);
+        }
+        // Resize handles
+        const leftH = document.createElement('div');
+        leftH.className='resize-handle';
+        leftH.style.position='absolute';
+        leftH.style.left='0';
+        leftH.style.top='0';
+        leftH.style.width='6px';
+        leftH.style.height='100%';
+        leftH.style.cursor='ew-resize';
+        leftH.style.background='rgba(0,0,0,0.15)';
+        bar.appendChild(leftH);
+        const rightH = leftH.cloneNode();
+        rightH.style.left='';
+        rightH.style.right='0';
+        bar.appendChild(rightH);
+
+        bar.title = `${t.name}: ${t.start} → ${t.finish} (${t.durationDays}d)`;
+        bar.addEventListener('dblclick', ()=>openTaskModal(t));
+        enableDrag(bar, t, offsetDays, durDays);
+        enableResize(bar, t, offsetDays, durDays, leftH, rightH);
+        chartCell.appendChild(bar);
+      }
+    }
+
+    row.appendChild(chartCell);
+    container.appendChild(row);
+  });
+}
+
+function openTaskModal(task) {
+  document.getElementById('taskId').value = task.id;
+  document.getElementById('taskName').value = task.name;
+  document.getElementById('taskStart').value = task.start || '';
+  document.getElementById('taskDuration').value = task.duration || task.durationDays || 0;
+  document.getElementById('taskPercent').value = task.percent_complete || 0;
+  document.getElementById('taskResp').value = task.responsible || '';
+  document.getElementById('taskNotes').value = task.notes || '';
+  const modal = new bootstrap.Modal(document.getElementById('taskModal'));
+  modal.show();
+}
+
+function persistTask(task){
+  fetch('/update_task_fields', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({id: task.id, start: task.start, duration: task.durationDays ?? task.duration, percent_complete: task.percent_complete})
+  }).then(r=>r.json()).then(resp=>{
+    if(!resp.success){ console.warn('Persist failed', resp); return; }
+    if(resp.adjusted){
+      // Server adjusted start due to dependency constraint
+      task.start = resp.start;
+      const sDate = new Date(task.start+'T00:00:00');
+      task.finish = new Date(sDate.getTime() + (task.durationDays||0)*86400000).toISOString().slice(0,10);
+      computeDerived();
+      filterTasks();
+      render();
+      showToast(`Start adjusted to ${resp.start} to satisfy dependency.`);
+    }
+  });
+}
+function showToast(msg){
+  let holder = document.getElementById('toastHolder');
+  if(!holder){
+    holder = document.createElement('div');
+    holder.id='toastHolder';
+    holder.style.position='fixed';
+    holder.style.bottom='12px';
+    holder.style.right='12px';
+    holder.style.zIndex='2000';
+    document.body.appendChild(holder);
+  }
+  const el = document.createElement('div');
+  el.className='alert alert-warning py-1 px-2 shadow-sm';
+  el.textContent = msg;
+  holder.appendChild(el);
+  setTimeout(()=>{el.remove(); if(!holder.children.length) holder.remove();}, 4500);
+}
+
+// Modify places where we adjust task timing
+// We re-define enableDrag and enableResize with persistence after change
+function enableDrag(bar, task, offsetDays, durDays) {
+  let startX, origOffset;
+  bar.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('resize-handle')) return;
+    startX = e.clientX; origOffset = offsetDays;
+    const move = ev => {
+      const dx = ev.clientX - startX;
+      const dayDelta = Math.round(dx / dayWidth);
+      const newOffset = origOffset + dayDelta;
+      const startDate = minStart();
+      const newStart = new Date(startDate.getTime() + newOffset*86400000);
+      task.start = newStart.toISOString().slice(0,10);
+      if (!task.milestone) {
+        const nf = new Date(newStart.getTime() + task.durationDays*86400000);
+        task.finish = nf.toISOString().slice(0,10);
+      } else { task.finish = task.start; }
+      computeDerived();
+      render();
+    };
+    const up = ()=>{document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); persistTask(task);};
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
+function enableResize(bar, task, offsetDays, durDays, leftH, rightH) {
+  let startX, origDur, origOffset;
+  rightH.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    startX = e.clientX; origDur = task.durationDays;
+    const move = ev => {
+      const dx = ev.clientX - startX;
+      const deltaDays = Math.round(dx/dayWidth);
+      task.durationDays = Math.max(0, origDur + deltaDays);
+      const sDate = new Date(task.start+'T00:00:00');
+      task.finish = new Date(sDate.getTime() + task.durationDays*86400000).toISOString().slice(0,10);
+      render();
+    };
+    const up = ()=>{document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); persistTask(task);};
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+  leftH.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    startX = e.clientX; origDur = task.durationDays; origOffset = offsetDays;
+    const move = ev => {
+      const dx = ev.clientX - startX;
+      const deltaDays = Math.round(dx/dayWidth);
+      const newOffset = origOffset + deltaDays;
+      const startDate = minStart();
+      const newStart = new Date(startDate.getTime() + newOffset*86400000);
+      const newDur = Math.max(0, origDur - deltaDays);
+      task.start = newStart.toISOString().slice(0,10);
+      task.durationDays = newDur;
+      task.finish = new Date(newStart.getTime() + task.durationDays*86400000).toISOString().slice(0,10);
+      render();
+    };
+    const up = ()=>{document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); persistTask(task);};
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+}
+
+// Zoom
+ document.getElementById('zoomIn').addEventListener('click', () => {dayWidth = Math.min(120, dayWidth+4); render();});
+ document.getElementById('zoomOut').addEventListener('click', () => {dayWidth = Math.max(6, dayWidth-4); render();});
+ document.getElementById('toggleExternal').addEventListener('change', ()=>{filterTasks(); render();});
+ document.getElementById('toggleMilestones').addEventListener('change', ()=>{filterTasks(); render();});
+
+// Save edits (in-memory only for now) - TODO: send to server endpoint for persistence
+ document.getElementById('saveTaskBtn').addEventListener('click', ()=>{
+   const id = parseInt(document.getElementById('taskId').value,10);
+   const t = allTasks.find(x=>x.id===id);
+   if (t){
+     t.start = document.getElementById('taskStart').value;
+     t.duration = parseInt(document.getElementById('taskDuration').value,10)||0;
+     t.percent_complete = parseFloat(document.getElementById('taskPercent').value)||0;
+     const sDate = new Date(t.start+'T00:00:00');
+     t.finish = new Date(sDate.getTime() + t.duration*86400000).toISOString().slice(0,10);
+     computeDerived(); filterTasks(); render(); persistTask(t); }
+   bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
+ });
+
+fetchData();
+</script>
+{% endblock %}

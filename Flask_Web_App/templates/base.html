@@ -33,22 +33,6 @@
 </head>
 <body>
     <div class="container-fluid my-4 tu-main-container">
-        <!-- Control Panel -->
-        <div class="card mb-4">
-            <div class="card-header">Control Panel</div>
-            <div class="card-body">
-                <form id="color-scheme-form" class="row g-3 align-items-center">
-                    <div class="col-auto">
-                        <label for="primaryColor" class="form-label mb-0">Primary Color</label>
-                        <input type="color" class="form-control form-control-color" id="primaryColor" value="#4287f5" title="Primary Color">
-                    </div>
-                    <div class="col-auto">
-                        <label for="secondaryColor" class="form-label mb-0">Secondary Color</label>
-                        <input type="color" class="form-control form-control-color" id="secondaryColor" value="#FF8200" title="Secondary Color">
-                    </div>
-                </form>
-            </div>
-        </div>
         <h1 class="mb-4">TU's Project Hub</h1>
         <div class="mb-4">
             <a href="/" class="btn btn-outline-dark me-2">Dashboard</a>
@@ -56,7 +40,9 @@
             <a href="/calendar" class="btn btn-outline-primary me-2">Calendar View</a>
             <a href="/kanban" class="btn btn-outline-success me-2">Kanban Board</a>
             <a href="/gantt" class="btn btn-outline-warning me-2">Gantt Chart</a>
+            <a href="/gantt_interactive" class="btn btn-outline-warning me-2">Interactive Gantt</a>
             <a href="/timeline" class="btn btn-outline-info">Project Timeline</a>
+            <a href="/control-panel" class="btn btn-outline-dark">Control Panel</a>
         </div>
         {% block content %}{% endblock %}
     </div>
@@ -69,28 +55,31 @@ const secondaryColorInput = document.getElementById('secondaryColor');
 const colorStyle = document.getElementById('color-scheme-style');
 
 function updateColors(save=true) {
-    const primary = primaryColorInput.value;
-    const secondary = secondaryColorInput.value;
+    let primary = (primaryColorInput && primaryColorInput.value) || localStorage.getItem('primaryColor') || '#4287f5';
+    let secondary = (secondaryColorInput && secondaryColorInput.value) || localStorage.getItem('secondaryColor') || '#FF8200';
     colorStyle.innerHTML = `:root {--primary-color: ${primary};--secondary-color: ${secondary};}
     .progress-bar {background: var(--secondary-color);}
     .progress-bar .progress-bar-fill {background: var(--primary-color);}`;
-    if (save) {
+    if (save && primaryColorInput && secondaryColorInput) {
         localStorage.setItem('primaryColor', primary);
         localStorage.setItem('secondaryColor', secondary);
     }
 }
 
-// Load saved colors on page load
 document.addEventListener('DOMContentLoaded', function() {
-    const savedPrimary = localStorage.getItem('primaryColor');
-    const savedSecondary = localStorage.getItem('secondaryColor');
-    if (savedPrimary) primaryColorInput.value = savedPrimary;
-    if (savedSecondary) secondaryColorInput.value = savedSecondary;
+    // Initialize colors even if inputs not present (other pages)
+    if (primaryColorInput) {
+        const savedPrimary = localStorage.getItem('primaryColor');
+        if (savedPrimary) primaryColorInput.value = savedPrimary;
+    }
+    if (secondaryColorInput) {
+        const savedSecondary = localStorage.getItem('secondaryColor');
+        if (savedSecondary) secondaryColorInput.value = savedSecondary;
+    }
     updateColors(false);
+    if (primaryColorInput) primaryColorInput.addEventListener('input', () => updateColors(true));
+    if (secondaryColorInput) secondaryColorInput.addEventListener('input', () => updateColors(true));
 });
-
-primaryColorInput.addEventListener('input', function() { updateColors(true); });
-secondaryColorInput.addEventListener('input', function() { updateColors(true); });
 </script>
 {% block scripts %}{% endblock %}
 </html>
