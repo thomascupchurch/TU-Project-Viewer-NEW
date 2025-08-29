@@ -1198,7 +1198,7 @@ def update_task_fields():
                         t['status'] = 'In Progress'
                 except Exception:
                     return jsonify({'success': False, 'error': 'Invalid percent_complete'}), 400
-            # Dependency constraint enforcement: ensure t['start'] >= dependency end
+            # Dependency constraint enforcement: BLOCK (reject) if start before dependency end
             dep_name = t.get('depends_on')
             if dep_name:
                 dep_task = next((dt for dt in tasks if dt.get('name') == dep_name), None)
@@ -1210,10 +1210,7 @@ def update_task_fields():
                         if t.get('start'):
                             this_start_dt = datetime.strptime(t['start'], '%Y-%m-%d')
                             if this_start_dt < dep_end_dt:
-                                # Adjust start to dependency end
-                                t['start'] = dep_end_dt.strftime('%Y-%m-%d')
-                                adjusted = True
-                                adjusted_start = t['start']
+                                return jsonify({'success': False, 'error': 'Dependency violation', 'dependency_end': dep_end_dt.strftime('%Y-%m-%d')}), 409
                     except Exception:
                         pass
             updated = True
@@ -1221,7 +1218,7 @@ def update_task_fields():
             break
     if not updated:
         return jsonify({'success': False, 'error': 'Task not found'}), 404
-    return jsonify({'success': True, 'adjusted': adjusted, 'start': adjusted_start or t.get('start'), 'duration': t.get('duration'), 'percent_complete': t.get('percent_complete')})
+    return jsonify({'success': True, 'adjusted': False, 'start': t.get('start'), 'duration': t.get('duration'), 'percent_complete': t.get('percent_complete')})
 
 @app.route('/download_project')
 def download_project():

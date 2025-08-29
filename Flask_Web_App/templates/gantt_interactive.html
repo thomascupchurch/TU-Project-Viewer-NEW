@@ -279,23 +279,22 @@ function openTaskModal(task) {
 }
 
 function persistTask(task){
-  fetch('/update_task_fields', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({id: task.id, start: task.start, duration: task.durationDays ?? task.duration, percent_complete: task.percent_complete})
-  }).then(r=>r.json()).then(resp=>{
-    if(!resp.success){ console.warn('Persist failed', resp); return; }
-    if(resp.adjusted){
-      // Server adjusted start due to dependency constraint
-      task.start = resp.start;
-      const sDate = new Date(task.start+'T00:00:00');
-      task.finish = new Date(sDate.getTime() + (task.durationDays||0)*86400000).toISOString().slice(0,10);
-      computeDerived();
-      filterTasks();
-      render();
-      showToast(`Start adjusted to ${resp.start} to satisfy dependency.`);
-    }
-  });
+  const original = {start: task.start, durationDays: task.durationDays, percent: task.percent_complete};
+  fetch('/update_task_fields', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: task.id, start: task.start, duration: task.durationDays ?? task.duration, percent_complete: task.percent_complete})})
+    .then(async r=>{ const json = await r.json(); return {status:r.status, body:json}; })
+    .then(({status, body})=>{
+      if(status===409 && body.error==='Dependency violation'){
+        showToast(`Blocked: must start on or after ${body.dependency_end}`);
+        // revert to safe date = dependency_end
+        task.start = body.dependency_end;
+        const sDate = new Date(task.start+'T00:00:00');
+        task.finish = new Date(sDate.getTime() + (task.durationDays||0)*86400000).toISOString().slice(0,10);
+        computeDerived(); filterTasks(); render();
+        return;
+      }
+      if(!body.success){ console.warn('Persist failed', body); showToast('Save failed'); return; }
+      // success: nothing extra needed
+    }).catch(e=>{console.error(e); showToast('Save error');});
 }
 function showToast(msg){
   let holder = document.getElementById('toastHolder');
