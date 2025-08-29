@@ -17,9 +17,32 @@ import zipfile
 import pytz
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+import portalocker
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'  # Change this in production
+# Use environment variable for secret key (fallback only for dev)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-insecure-change-me')
+
+# --- Base directory & path helpers ---
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+def _atomic_write_json(path, data):
+    """Write JSON atomically to avoid partial writes (write temp then replace)."""
+    import tempfile
+    dir_ = os.path.dirname(path)
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=dir_, prefix='.tmp_', suffix='.json')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as tmp_f:
+            json.dump(data, tmp_f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    finally:
+        # In rare failure cases ensure temp removed
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 # --- Flask-Login setup ---
 login_manager = LoginManager()
@@ -28,8 +51,8 @@ login_manager.login_view = 'login'
 
 # --- User Model ---
 import uuid
-USERS_FILE = os.path.join(os.path.dirname(__file__), 'users.json')
-SETTINGS_FILE = os.path.join(os.path.dirname(__file__), 'settings.json')
+USERS_FILE = os.path.join(BASE_DIR, 'users.json')
+SETTINGS_FILE = os.path.join(BASE_DIR, 'settings.json')
 users = []
 settings = {
     'open_editing': False  # False => only admins can edit; True => any authenticated user can edit their tasks
@@ -48,29 +71,51 @@ def load_users():
     global users
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            users = json.load(f)
+            try:
+                portalocker.lock(f, portalocker.LOCK_SH)
+                users = json.load(f)
+            finally:
+                try:
+                    portalocker.unlock(f)
+                except Exception:
+                    pass
     else:
         users = []
 
 def save_users():
-    with open(USERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, indent=2, ensure_ascii=False)
+    # Exclusive lock via companion .lock file to serialize writers
+    lock_path = USERS_FILE + '.lock'
+    with open(lock_path, 'w') as lock_f:
+        portalocker.lock(lock_f, portalocker.LOCK_EX)
+        try:
+            _atomic_write_json(USERS_FILE, users)
+        finally:
+            portalocker.unlock(lock_f)
 
 def load_settings():
     global settings
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    settings.update(data)
+                portalocker.lock(f, portalocker.LOCK_SH)
+                try:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        settings.update(data)
+                finally:
+                    portalocker.unlock(f)
         except Exception:
             pass
 
 def save_settings():
     try:
-        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, indent=2, ensure_ascii=False)
+        lock_path = SETTINGS_FILE + '.lock'
+        with open(lock_path, 'w') as lock_f:
+            portalocker.lock(lock_f, portalocker.LOCK_EX)
+            try:
+                _atomic_write_json(SETTINGS_FILE, settings)
+            finally:
+                portalocker.unlock(lock_f)
     except Exception:
         pass
 
@@ -185,20 +230,32 @@ def logout():
     flash('Logged out.')
     return redirect(url_for('login'))
 
-PHASES_FILE = os.path.join(os.path.dirname(__file__), 'phases.json')
+PHASES_FILE = os.path.join(BASE_DIR, 'phases.json')
 phases = []
 
 def load_phases():
     global phases
     if os.path.exists(PHASES_FILE):
         with open(PHASES_FILE, 'r', encoding='utf-8') as f:
-            phases = json.load(f)
+            try:
+                portalocker.lock(f, portalocker.LOCK_SH)
+                phases = json.load(f)
+            finally:
+                try:
+                    portalocker.unlock(f)
+                except Exception:
+                    pass
     else:
         phases = []
 
 def save_phases():
-    with open(PHASES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(phases, f, indent=2, ensure_ascii=False)
+    lock_path = PHASES_FILE + '.lock'
+    with open(lock_path, 'w') as lock_f:
+        portalocker.lock(lock_f, portalocker.LOCK_EX)
+        try:
+            _atomic_write_json(PHASES_FILE, phases)
+        finally:
+            portalocker.unlock(lock_f)
 
 # --- Phase creation ---
 @app.route('/phases', methods=['GET', 'POST'])
@@ -447,11 +504,11 @@ def tasks_json():
     # Return all fields for each task, including id and parent (by id)
     return jsonify(tasks)
 
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 PDF_FILENAME = 'uploaded.pdf'
 
-TASKS_FILE = os.path.join(os.path.dirname(__file__), 'tasks.json')
+TASKS_FILE = os.path.join(BASE_DIR, 'tasks.json')
 tasks = []
 next_task_id = 1
 
@@ -486,7 +543,11 @@ def load_tasks():
     if os.path.exists(TASKS_FILE):
         try:
             with open(TASKS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                portalocker.lock(f, portalocker.LOCK_SH)
+                try:
+                    data = json.load(f)
+                finally:
+                    portalocker.unlock(f)
                 if isinstance(data, list):
                     tasks.clear()
                     max_id = 0
@@ -543,8 +604,13 @@ def load_tasks():
 def save_tasks():
     try:
         print(f"[DEBUG] save_tasks() called. Saving {len(tasks)} tasks to {TASKS_FILE}")
-        with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(tasks, f, indent=2, ensure_ascii=False)
+        lock_path = TASKS_FILE + '.lock'
+        with open(lock_path, 'w') as lock_f:
+            portalocker.lock(lock_f, portalocker.LOCK_EX)
+            try:
+                _atomic_write_json(TASKS_FILE, tasks)
+            finally:
+                portalocker.unlock(lock_f)
         print(f"[DEBUG] save_tasks() wrote file successfully.")
     except Exception as e:
         print(f"[DEBUG] save_tasks() failed: {e}")
