@@ -1166,6 +1166,8 @@ def download_csv():
 def index():
     global tasks
     load_tasks()
+    load_phases()
+    load_settings()
     pdf_uploaded = os.path.exists(os.path.join(UPLOAD_FOLDER, PDF_FILENAME))
     parent_options = [('', 'None')] + [(t['name'], t['name']) for t in tasks]
     if request.method == 'POST':
@@ -1240,31 +1242,45 @@ def index():
                     return redirect(url_for('index'))
                 # Add new task from form
         print("[DEBUG] Entered new task creation branch.")
+        # Unified task form (matching tasks tab)
         name = request.form.get('name', '').strip()
+        phase = request.form.get('phase', '').strip()
+        share_with = request.form.get('share_with', '').strip()
         responsible = request.form.get('responsible', '').strip()
         start = request.form.get('start', '').strip()
         duration = request.form.get('duration', '').strip()
+        percent_complete = request.form.get('percent_complete', '0').strip()
+        status = request.form.get('status', '').strip() or 'Not Started'
         depends_on = request.form.get('depends_on', '').strip()
         resources = request.form.get('resources', '').strip()
         notes = request.form.get('notes', '').strip()
         pdf_page = request.form.get('pdf_page', '').strip()
-        percent_complete = request.form.get('percent_complete', '0').strip()
-        color = request.form.get('color', '#4287f5').strip()
-        # Handle multiple file uploads for task attachments
+        parent = request.form.get('parent', '').strip()
+        milestone = request.form.get('milestone', '').strip()
+        document_links_raw = request.form.get('document_links') or request.form.get('document_link', '')
+        document_links = document_links_raw.strip()
+        links_list = [l.strip() for l in document_links.split(',') if l.strip()]
+        external_task = True if request.form.get('external_task') == 'on' else False
+        external_milestone = True if request.form.get('external_milestone') == 'on' else False
+        # Share_with usernames -> ids
+        share_with_ids = []
+        if share_with:
+            load_users()
+            for uname in [u.strip() for u in share_with.split(',') if u.strip()]:
+                user = next((u for u in users if u['username'] == uname), None)
+                if user:
+                    share_with_ids.append(user['id'])
+        # Attachments (use 'attachments' field name like tasks tab)
         attachment_filenames = []
-        if 'attachment' in request.files:
-            files = request.files.getlist('attachment')
-            for attachment in files:
+        if 'attachments' in request.files:
+            for attachment in request.files.getlist('attachments'):
                 if attachment and attachment.filename:
                     safe_name = attachment.filename.replace('..', '').replace('/', '_').replace('\\', '_')
                     save_path = os.path.join(UPLOAD_FOLDER, safe_name)
                     attachment.save(save_path)
                     attachment_filenames.append(safe_name)
-            if attachment_filenames:
-                print(f"[DEBUG] Saved attachments for task '{name}': {attachment_filenames}")
-        # Handle multiple document links (comma or newline separated)
-        document_links = request.form.get('document_link', '').strip()
-        links_list = [l.strip() for l in document_links.replace('\r', '').replace('\n', ',').split(',') if l.strip()]
+        if attachment_filenames:
+            print(f"[DEBUG] Saved attachments for task '{name}': {attachment_filenames}")
         # Automatically set status based on percent_complete
         try:
             percent_val = float(percent_complete)
@@ -1276,16 +1292,6 @@ def index():
             status = 'In Progress'
         else:
             status = 'Not Started'
-        relation_type = request.form.get('relation_type', 'parent')
-        parent_name = request.form.get('parent', '').strip() if relation_type == 'parent' else None
-        milestone = request.form.get('milestone', '').strip() if relation_type == 'milestone' else ''
-        # Find parent id if parent_name is set
-        parent_id = None
-        if parent_name:
-            for t in tasks:
-                if t['name'] == parent_name:
-                    parent_id = t['id']
-                    break
         # If depends_on is set, automatically set start date to the day after the dependency ends
         auto_start = start
         if depends_on:
@@ -1304,6 +1310,9 @@ def index():
             global next_task_id
             # If editing, merge new attachments with existing ones
             if edit_idx.isdigit() and int(edit_idx) < len(tasks):
+                if not can_edit():
+                    flash('Editing is restricted to admins.')
+                    return redirect(url_for('index'))
                 old_task = tasks[int(edit_idx)]
                 merged_attachments = list(old_task.get('attachments', []))
                 for fname in attachment_filenames:
@@ -1327,17 +1336,25 @@ def index():
                     'pdf_page': pdf_page,
                     'status': status,
                     'percent_complete': percent_complete,
-                    'parent': parent_id,
+                    'parent': parent,
                     'milestone': milestone,
                     'attachments': merged_attachments,
                     'document_links': links_list,
+                    'phase': phase,
+                    'shared_with': share_with_ids,
+                    'external_task': external_task,
+                    'external_milestone': external_milestone,
                 }
                 tasks[int(edit_idx)] = new_task
                 changed = True
             else:
-                 # New task: always set attachments field (even if empty)
+                if not can_edit():
+                    flash('Editing is restricted to admins.')
+                    return redirect(url_for('index'))
+                # New task: always set attachments field (even if empty)
                 new_task = {
                     'id': next_task_id,
+                    'user_id': current_user.get_id() if current_user.is_authenticated else None,
                     'name': name,
                     'responsible': responsible,
                     'start': auto_start,
@@ -1348,12 +1365,14 @@ def index():
                     'pdf_page': pdf_page,
                     'status': status,
                     'percent_complete': percent_complete,
-                    'parent': parent_id,
+                    'parent': parent,
                     'milestone': milestone,
                     'attachments': attachment_filenames,
                     'document_links': links_list,
-                    'external_task': False,
-                    'external_milestone': False,
+                    'external_task': external_task,
+                    'external_milestone': external_milestone,
+                    'phase': phase,
+                    'shared_with': share_with_ids,
                 }
                 tasks.append(new_task)
                 next_task_id += 1
