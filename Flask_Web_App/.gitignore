@@ -1,0 +1,26 @@
+# Ignore archives and large binary exports
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.bak
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploaded files
+static/uploads/*
+!static/uploads/.gitkeep
+
+# Local settings
+settings.json

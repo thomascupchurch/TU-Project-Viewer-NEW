@@ -23,6 +23,50 @@
     </form>
   </div>
 </div>
+<div class="card mb-4">
+  <div class="card-header">User Management</div>
+  <div class="card-body">
+    <form id="create-user-form" class="row g-2 mb-3">
+      <div class="col-auto">
+        <input type="text" class="form-control" id="newUsername" placeholder="Username" required>
+      </div>
+      <div class="col-auto">
+        <input type="password" class="form-control" id="newPassword" placeholder="Password" required>
+      </div>
+      <div class="col-auto form-check mt-2">
+        <input class="form-check-input" type="checkbox" id="newIsAdmin">
+        <label class="form-check-label" for="newIsAdmin">Admin</label>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-sm btn-primary" type="submit">Create User</button>
+      </div>
+    </form>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle" id="usersTable">
+        <thead>
+          <tr><th>Username</th><th>Admin</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr data-user-id="{{u.id}}">
+            <td>{{u.username}}</td>
+            <td>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input admin-toggle" type="checkbox" {% if u.is_admin %}checked{% endif %}>
+              </div>
+            </td>
+            <td>
+              <button class="btn btn-sm btn-outline-secondary reset-pass-btn">Reset Password</button>
+              <button class="btn btn-sm btn-outline-danger delete-user-btn">Delete</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <small class="text-muted">You cannot remove or delete the last remaining admin.</small>
+  </div>
+</div>
 <div class="alert alert-info">Adjust your project color scheme here. These colors apply across all views (tasks, Gantt, timeline, etc.).</div>
 <script>
 fetch('/settings_json').then(r=>r.json()).then(s=>{
@@ -31,6 +75,73 @@ fetch('/settings_json').then(r=>r.json()).then(s=>{
 document.getElementById('openEditingToggle').addEventListener('change', function(){
   fetch('/set_open_editing', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({open_editing: this.checked})})
     .then(r=>r.json()).then(resp=>{ if(!resp.success){ alert('Failed to save setting'); this.checked = !this.checked; }});
+});
+
+// --- User management JS ---
+document.getElementById('create-user-form').addEventListener('submit', function(e){
+  e.preventDefault();
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newPassword').value;
+  const is_admin = document.getElementById('newIsAdmin').checked;
+  if(!username || !password){ return; }
+  fetch('/admin/create_user', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password, is_admin})})
+    .then(r=>r.json()).then(resp=>{
+      if(resp.success){
+        addUserRow(resp.user);
+        this.reset();
+      } else {
+        alert(resp.error || 'Failed to create user');
+      }
+    });
+});
+
+function addUserRow(u){
+  const tbody = document.querySelector('#usersTable tbody');
+  const tr = document.createElement('tr');
+  tr.dataset.userId = u.id;
+  tr.innerHTML = `
+    <td>${u.username}</td>
+    <td><div class="form-check form-switch m-0"><input class="form-check-input admin-toggle" type="checkbox" ${u.is_admin ? 'checked' : ''}></div></td>
+    <td>
+      <button class="btn btn-sm btn-outline-secondary reset-pass-btn">Reset Password</button>
+      <button class="btn btn-sm btn-outline-danger delete-user-btn">Delete</button>
+    </td>`;
+  tbody.appendChild(tr);
+}
+
+document.querySelector('#usersTable').addEventListener('change', function(e){
+  if(e.target.classList.contains('admin-toggle')){
+    const tr = e.target.closest('tr');
+    const user_id = tr.dataset.userId;
+    fetch('/admin/set_admin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id, is_admin: e.target.checked})})
+      .then(r=>r.json()).then(resp=>{
+        if(!resp.success){
+          alert(resp.error || 'Failed to update admin flag');
+          e.target.checked = !e.target.checked;
+        }
+      });
+  }
+});
+
+document.querySelector('#usersTable').addEventListener('click', function(e){
+  if(e.target.classList.contains('reset-pass-btn')){
+    const tr = e.target.closest('tr');
+    const user_id = tr.dataset.userId;
+    const pw = prompt('Enter new password for this user:');
+    if(!pw){ return; }
+    fetch('/admin/reset_password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id, new_password: pw})})
+      .then(r=>r.json()).then(resp=>{ if(!resp.success){ alert(resp.error || 'Password reset failed'); } else { alert('Password reset'); }});
+  }
+  if(e.target.classList.contains('delete-user-btn')){
+    const tr = e.target.closest('tr');
+    const user_id = tr.dataset.userId;
+    if(!confirm('Delete this user? This cannot be undone.')) return;
+    fetch('/admin/delete_user', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id})})
+      .then(r=>r.json()).then(resp=>{
+        if(resp.success){ tr.remove(); }
+        else { alert(resp.error || 'Delete failed'); }
+      });
+  }
 });
 </script>
 {% endblock %}

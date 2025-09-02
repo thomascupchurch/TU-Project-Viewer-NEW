@@ -476,7 +476,16 @@ def timeline_page():
 @login_required
 @admin_required
 def control_panel_page():
-    return render_template('control_panel.html')
+    load_users()
+    # Provide users (excluding password hashes) to template
+    safe_users = [
+        {
+            'id': u['id'],
+            'username': u['username'],
+            'is_admin': u.get('is_admin', False)
+        } for u in users
+    ]
+    return render_template('control_panel.html', users=safe_users)
 
 @app.route('/settings_json')
 @login_required
@@ -495,6 +504,108 @@ def set_open_editing():
     settings['open_editing'] = val
     save_settings()
     return jsonify({'success': True, 'open_editing': settings['open_editing']})
+
+# --- User management API (admin only) ---
+@app.route('/admin/users_json')
+@login_required
+@admin_required
+def admin_users_json():
+    load_users()
+    return jsonify([
+        {
+            'id': u['id'],
+            'username': u['username'],
+            'is_admin': u.get('is_admin', False)
+        } for u in users
+    ])
+
+@app.route('/admin/create_user', methods=['POST'])
+@login_required
+@admin_required
+def admin_create_user():
+    load_users()
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = (data.get('password') or '').strip()
+    is_admin = bool(data.get('is_admin', False))
+    if not username or not password:
+        return jsonify({'success': False, 'error': 'Username and password required'}), 400
+    if any(u['username'].lower() == username.lower() for u in users):
+        return jsonify({'success': False, 'error': 'Username already exists'}), 409
+    new_user = {
+        'id': str(uuid.uuid4()),
+        'username': username,
+        'password_hash': generate_password_hash(password),
+        'is_admin': is_admin
+    }
+    users.append(new_user)
+    save_users()
+    return jsonify({'success': True, 'user': {'id': new_user['id'], 'username': new_user['username'], 'is_admin': new_user['is_admin']}})
+
+@app.route('/admin/set_admin', methods=['POST'])
+@login_required
+@admin_required
+def admin_set_admin():
+    load_users()
+    data = request.get_json(force=True, silent=True) or {}
+    user_id = data.get('user_id')
+    is_admin = bool(data.get('is_admin'))
+    if not user_id:
+        return jsonify({'success': False, 'error': 'user_id required'}), 400
+    target = next((u for u in users if str(u['id']) == str(user_id)), None)
+    if not target:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    # Prevent demoting last admin
+    if not is_admin:
+        other_admins = [u for u in users if u.get('is_admin', False) and str(u['id']) != str(user_id)]
+        if not other_admins:
+            return jsonify({'success': False, 'error': 'Cannot remove the last admin'}), 400
+    target['is_admin'] = is_admin
+    save_users()
+    return jsonify({'success': True})
+
+@app.route('/admin/reset_password', methods=['POST'])
+@login_required
+@admin_required
+def admin_reset_password():
+    load_users()
+    data = request.get_json(force=True, silent=True) or {}
+    user_id = data.get('user_id')
+    new_password = (data.get('new_password') or '').strip()
+    if not user_id or not new_password:
+        return jsonify({'success': False, 'error': 'user_id and new_password required'}), 400
+    target = next((u for u in users if str(u['id']) == str(user_id)), None)
+    if not target:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    target['password_hash'] = generate_password_hash(new_password)
+    save_users()
+    return jsonify({'success': True})
+
+@app.route('/admin/delete_user', methods=['POST'])
+@login_required
+@admin_required
+def admin_delete_user():
+    load_users()
+    data = request.get_json(force=True, silent=True) or {}
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'user_id required'}), 400
+    target = next((u for u in users if str(u['id']) == str(user_id)), None)
+    if not target:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    # Prevent deleting last admin
+    if target.get('is_admin', False):
+        other_admins = [u for u in users if u.get('is_admin', False) and str(u['id']) != str(user_id)]
+        if not other_admins:
+            return jsonify({'success': False, 'error': 'Cannot delete the last admin'}), 400
+    # Remove user
+    remaining = [u for u in users if str(u['id']) != str(user_id)]
+    # Reassign tasks belonging to deleted user? For now just leave tasks with orphaned user_id
+    # Could optionally scrub or transfer ownership.
+    users.clear()
+    users.extend(remaining)
+    save_users()
+    return jsonify({'success': True})
 
 # --- Calendar View Route ---
 @app.route('/calendar')
