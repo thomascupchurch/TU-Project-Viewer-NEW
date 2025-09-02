@@ -4,6 +4,8 @@
 # --- Imports ---
 import csv
 import os
+import time
+import secrets
 import io
 import json
 
@@ -70,6 +72,16 @@ settings = {
     'open_editing': False  # False => only admins can edit; True => any authenticated user can edit their tasks
 }
 
+# --- Password complexity helper ---
+def password_errors(pw: str):
+    errs = []
+    if len(pw) < 8: errs.append('at least 8 characters')
+    if not any(c.islower() for c in pw): errs.append('a lowercase letter')
+    if not any(c.isupper() for c in pw): errs.append('an uppercase letter')
+    if not any(c.isdigit() for c in pw): errs.append('a digit')
+    if not any(c in '!@#$%^&*()-_=+[]{};:,<.>/?' for c in pw): errs.append('a special character')
+    return errs
+
 class User(UserMixin):
     def __init__(self, id, username, password_hash, is_admin=False):
         self.id = id
@@ -85,24 +97,36 @@ def load_users():
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
             try:
                 portalocker.lock(f, portalocker.LOCK_SH)
-                users = json.load(f)
-            finally:
                 try:
-                    portalocker.unlock(f)
-                except Exception:
-                    pass
+                    data = json.load(f)
+                finally:
+                    try:
+                        portalocker.unlock(f)
+                    except Exception:
+                        pass
+            except Exception:
+                data = []
+        if isinstance(data, list):
+            # Mutate list in-place so external references remain valid
+            users.clear()
+            users.extend(data)
+        else:
+            users.clear()
     else:
-        users = []
+        users.clear()
 
 def save_users():
-    # Exclusive lock via companion .lock file to serialize writers
-    lock_path = USERS_FILE + '.lock'
-    with open(lock_path, 'w') as lock_f:
-        portalocker.lock(lock_f, portalocker.LOCK_EX)
-        try:
-            _atomic_write_json(USERS_FILE, users)
-        finally:
-            portalocker.unlock(lock_f)
+    """Persist users list to disk with debug logging.
+    Simplified: no external lock file (low contention scenario)."""
+    try:
+        print(f"[DEBUG] save_users(): attempting write of {len(users)} users to {USERS_FILE}")
+        _atomic_write_json(USERS_FILE, users)
+        # Immediate read-back verification
+        with open(USERS_FILE, 'r', encoding='utf-8') as rf:
+            data = json.load(rf)
+        print(f"[DEBUG] save_users(): verification read got {len(data)} users")
+    except Exception as e:
+        print(f"[ERROR] save_users(): {e}")
 
 def load_settings():
     global settings
@@ -161,6 +185,10 @@ def register():
         password = request.form.get('password', '')
         if not username or not password:
             flash('Username and password are required.')
+            return render_template('register.html')
+        perrs = password_errors(password)
+        if perrs:
+            flash('Password must contain: ' + ', '.join(perrs))
             return render_template('register.html')
         if any(u['username'].lower() == username.lower() for u in users):
             flash('Username already exists.')
@@ -221,19 +249,98 @@ def delete_user(user_id):
     flash('User deleted.')
     return redirect(url_for('admin_dashboard'))
 
+FAILED_LOGINS = {}
+LOGIN_RATE_LIMIT_WINDOW = 600  # seconds
+LOGIN_RATE_LIMIT_MAX = 5
+
+def _login_rate_limited(key):
+    now = time.time()
+    attempts = [t for t in FAILED_LOGINS.get(key, []) if now - t < LOGIN_RATE_LIMIT_WINDOW]
+    FAILED_LOGINS[key] = attempts
+    if len(attempts) >= LOGIN_RATE_LIMIT_MAX:
+        return True, int(LOGIN_RATE_LIMIT_WINDOW - (now - attempts[0]))
+    return False, 0
+
+def _record_failed_login(key):
+    FAILED_LOGINS.setdefault(key, []).append(time.time())
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     load_users()
     if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password']
-        user = next((u for u in users if u['username'] == username), None)
-        if user and check_password_hash(user['password_hash'], password):
+        username = request.form.get('username','').strip()
+        password = request.form.get('password','')
+        key = (request.remote_addr or 'unknown') + '|' + username.lower()
+        limited, wait = _login_rate_limited(key)
+        if limited:
+            flash(f'Too many login attempts. Try again in ~{wait} seconds.')
+            return render_template('login.html')
+        user = next((u for u in users if u['username'].lower() == username.lower()), None)
+        if user and password and check_password_hash(user['password_hash'], password):
+            # On success clear attempts
+            FAILED_LOGINS.pop(key, None)
             login_user(User(user['id'], user['username'], user['password_hash'], user.get('is_admin', False)))
             return redirect(url_for('tasks_page'))
-        else:
-            flash('Invalid username or password.')
+        _record_failed_login(key)
+        flash('Invalid username or password.')
     return render_template('login.html')
+
+# ---------------- Password Reset (Self-Service Token) ---------------- #
+RESET_EXPIRY_SECONDS = 3600  # 1 hour
+
+def _find_user_by_reset_token(token):
+    for u in users:
+        if u.get('reset_token') == token:
+            return u
+    return None
+
+@app.route('/forgot', methods=['GET', 'POST'])
+def forgot_password():
+    load_users()
+    token_display = None
+    if request.method == 'POST':
+        username = request.form.get('username','').strip()
+        if not username:
+            flash('Username required.')
+            return render_template('forgot_password.html', token_display=None)
+        user = next((u for u in users if u['username'].lower() == username.lower()), None)
+        # Always respond generically to prevent user enumeration
+        if user:
+            user['reset_token'] = secrets.token_urlsafe(32)
+            user['reset_expires'] = time.time() + RESET_EXPIRY_SECONDS
+            save_users()
+            token_display = user['reset_token']  # Since no email system, show token for manual use
+            flash('If the account exists, a reset token was generated.')
+        else:
+            flash('If the account exists, a reset token was generated.')
+        return render_template('forgot_password.html', token_display=token_display, expires_minutes=RESET_EXPIRY_SECONDS//60)
+    return render_template('forgot_password.html', token_display=None)
+
+@app.route('/reset/<token>', methods=['GET','POST'])
+def reset_password(token):
+    load_users()
+    user = _find_user_by_reset_token(token)
+    if not user or user.get('reset_expires',0) < time.time():
+        flash('Invalid or expired reset token.')
+        return render_template('reset_password.html', invalid=True)
+    if request.method == 'POST':
+        pw1 = request.form.get('password','')
+        pw2 = request.form.get('confirm_password','')
+        if pw1 != pw2:
+            flash('Passwords do not match.')
+            return render_template('reset_password.html', token=token, invalid=False)
+        errs = password_errors(pw1)
+        if errs:
+            flash('Password must contain: ' + ', '.join(errs))
+            return render_template('reset_password.html', token=token, invalid=False)
+        user['password_hash'] = generate_password_hash(pw1)
+        # Invalidate token
+        user.pop('reset_token', None)
+        user.pop('reset_expires', None)
+        save_users()
+        flash('Password reset successful. Please log in.')
+        return redirect(url_for('login'))
+    return render_template('reset_password.html', token=token, invalid=False)
 
 @app.route('/logout')
 @login_required
@@ -268,6 +375,21 @@ def save_phases():
             _atomic_write_json(PHASES_FILE, phases)
         finally:
             portalocker.unlock(lock_f)
+
+@app.route('/create_phase', methods=['POST'])
+@login_required
+def create_phase():
+    """Create a phase (global). Accepts JSON: {"name": "Phase Name"}."""
+    load_phases()
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'error': 'Name required'}), 400
+    if any(p.get('name') == name for p in phases):
+        return jsonify({'success': False, 'error': 'Phase already exists'}), 409
+    phases.append({'id': len(phases) + 1, 'name': name})
+    save_phases()
+    return jsonify({'success': True, 'phase': {'id': phases[-1]['id'], 'name': name}})
 
 # --- Phase creation ---
 @app.route('/phases', methods=['GET', 'POST'])
@@ -1385,10 +1507,9 @@ def index():
             print(f"[DEBUG] Task list before save: {tasks}")
             save_tasks()
         return redirect(url_for('index'))
-    # Provide phases to dashboard so existing phases populate the phase dropdown
-    # Mirror filtering logic used elsewhere: show only phases owned by current user
-    user_phases = [p for p in phases if str(p.get('user_id')) == str(current_user.get_id())]
-    return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options, phases=user_phases)
+    # Global phases: show all phases (no longer filtered per-user)
+    can_edit_flag = can_edit()
+    return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options, phases=phases, can_edit_flag=can_edit_flag)
     # ...existing code...
 # --- Update Task Status (AJAX for Kanban drag-and-drop) ---
 @app.route('/update_task_status', methods=['POST'])

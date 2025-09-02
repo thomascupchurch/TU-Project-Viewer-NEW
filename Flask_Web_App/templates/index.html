@@ -30,13 +30,25 @@
                 <a href="/download_csv" class="btn btn-info">Export CSV</a>
             </div>
             <div class="mb-3 d-flex flex-column flex-grow-1" style="min-height: 0; height: 100%;">
+                {% if not can_edit_flag %}
+                <div class="alert alert-warning py-2 mb-2" role="alert" id="editingDisabledBanner">
+                    <strong>Read-Only Mode:</strong> Editing is currently restricted to admins. You can view tasks but cannot create or modify them.
+                </div>
+                {% endif %}
                                 <h4 class="d-flex align-items-center">Tasks
                                     <div class="form-check form-switch ms-3 mb-0">
                                         <input class="form-check-input" type="checkbox" id="hideExternalTasksToggle">
                                         <label class="form-check-label" for="hideExternalTasksToggle" style="font-size:0.85em;">Hide External</label>
                                     </div>
                                 </h4>
-                <form method="post" enctype="multipart/form-data" class="row g-3 mb-2" id="task-form">
+                <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+                    <div class="input-group" style="max-width: 260px;">
+                        <input type="text" id="newPhaseName" class="form-control" placeholder="New Phase Name">
+                        <button class="btn btn-outline-primary" type="button" id="addPhaseBtn">Add Phase</button>
+                    </div>
+                    <small class="text-muted">Add a phase, then select it for tasks.</small>
+                </div>
+                <form method="post" enctype="multipart/form-data" class="row g-3 mb-2" id="task-form" {% if not can_edit_flag %}style="pointer-events: none; opacity:0.6;"{% endif %}>
                     <input type="hidden" name="edit_idx" id="edit_idx" value="">
                     <div class="col-md-2">
                         <select class="form-select" name="phase">
@@ -102,7 +114,7 @@
                         <label class="form-check-label" for="external_milestone_index">External Milestone</label>
                     </div>
                     <div class="col-12">
-                        <button type="submit" class="btn btn-primary">Add Task</button>
+                        <button type="submit" class="btn btn-primary" {% if not can_edit_flag %}disabled{% endif %}>Add Task</button>
                     </div>
                 </form>
                     <div class="flex-grow-1 d-flex flex-column" style="min-height: 0; height: 100%;">
@@ -110,6 +122,7 @@
                             <table class="table table-bordered table-striped table-sm mt-1" style="font-size: 0.85em;">
                                 <thead class="table-light">
                                     <tr>
+                                        <th>Phase</th>
                                         <th>Name</th>
                                         <th>Resp</th>
                                         <th>Start</th>
@@ -131,6 +144,7 @@
                                 {% if tasks %}
                                     {% for task in tasks %}
                                     <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
+                                        <td>{{ task.phase }}</td>
                                         <td style="white-space: pre;">{{ task.name }}</td>
                                         <td>{{ task.responsible }}</td>
                                         <td>{{ task.start }}</td>
@@ -146,7 +160,7 @@
                                                 {% set pct = (task.percent_complete|default('0')|int) %}
                                                 {% if pct < 0 %}{% set pct = 0 %}{% endif %}
                                                 {% if pct > 100 %}{% set pct = 100 %}{% endif %}
-                                                <div class="progress-bar" role="progressbar" style="width: {{ pct }}%;" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">{{ pct }}%</div>
+                                                <div class="progress-bar" role="progressbar" data-pct="{{ pct }}" style="width:0; transition:width .3s;" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">{{ pct }}%</div>
                                             </div>
                                         </td>
                                         <td>{{ task.parent }}</td>
@@ -249,6 +263,38 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize progress bar widths (moved logic out of inline style to avoid template lint issues)
+    document.querySelectorAll('.progress-bar[data-pct]').forEach(pb=>{
+        const pct = parseInt(pb.getAttribute('data-pct')) || 0;
+        pb.style.width = pct + '%';
+    });
+    // Quick add phase
+    const phaseBtn = document.getElementById('addPhaseBtn');
+    if(phaseBtn){
+        phaseBtn.addEventListener('click', () => {
+            const nameEl = document.getElementById('newPhaseName');
+            const name = nameEl.value.trim();
+            if(!name) return;
+            fetch('/create_phase', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})})
+              .then(r=>r.json())
+              .then(data=>{
+                  if(data.success){
+                      // Add to select
+                      const sel = document.querySelector('select[name="phase"]');
+                      if(sel){
+                          const opt = document.createElement('option');
+                          opt.value = data.phase.name;
+                          opt.textContent = data.phase.name;
+                          sel.appendChild(opt);
+                          sel.value = data.phase.name;
+                      }
+                      nameEl.value='';
+                  } else {
+                      alert(data.error || 'Failed to add phase');
+                  }
+              });
+        });
+    }
     // Hide external filter
     const hideToggle = document.getElementById('hideExternalTasksToggle');
     function applyExternalFilter(){
@@ -270,17 +316,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const idx = btn.getAttribute('data-task-idx');
             const row = btn.closest('tr');
             const cells = row.querySelectorAll('td');
-            document.querySelector('input[name="name"]').value = cells[0].innerText.trim();
-            document.querySelector('input[name="responsible"]').value = cells[1].innerText.trim();
-            document.querySelector('input[name="start"]').value = cells[2].innerText.trim();
-            document.querySelector('input[name="duration"]').value = cells[3].innerText.trim();
-            document.querySelector('input[name="depends_on"]').value = cells[4].innerText.trim();
-            document.querySelector('input[name="resources"]').value = cells[5].innerText.trim();
-            document.querySelector('input[name="notes"]').value = cells[6].innerText.trim();
-            document.querySelector('input[name="pdf_page"]').value = cells[7].innerText.trim();
-            document.getElementById('status').value = cells[8].innerText.trim() || 'Not Started';
+            // Adjusted indices due to new Phase column at index 0
+            document.querySelector('select[name="phase"]').value = cells[0].innerText.trim();
+            document.querySelector('input[name="name"]').value = cells[1].innerText.trim();
+            document.querySelector('input[name="responsible"]').value = cells[2].innerText.trim();
+            document.querySelector('input[name="start"]').value = cells[3].innerText.trim();
+            document.querySelector('input[name="duration"]').value = cells[4].innerText.trim();
+            document.querySelector('input[name="depends_on"]').value = cells[5].innerText.trim();
+            document.querySelector('input[name="resources"]').value = cells[6].innerText.trim();
+            document.querySelector('input[name="notes"]').value = cells[7].innerText.trim();
+            document.querySelector('input[name="pdf_page"]').value = cells[8].innerText.trim();
+            document.getElementById('status').value = cells[9].innerText.trim() || 'Not Started';
             // Extract percent from progress bar text (e.g., '45%')
-            let percentText = cells[9].innerText.trim();
+            let percentText = cells[10].innerText.trim();
             let percentValue = 0;
             if (percentText.endsWith('%')) {
                 percentValue = parseInt(percentText.replace('%','').trim()) || 0;
@@ -289,7 +337,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             document.querySelector('input[name="percent_complete"]').value = percentValue;
             // Handle parent/milestone
-            const parentVal = cells[10].innerText.trim();
+            const parentVal = cells[11].innerText.trim();
             if (parentVal && parentVal !== 'None') {
                 document.getElementById('relation_type').value = 'parent';
                 toggleRelationFields();
@@ -306,10 +354,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const modalEl = document.getElementById('editTaskModal');
             if(modalEl){
                 document.getElementById('edit_idx_modal').value = idx;
-                document.getElementById('edit_name').value = cells[0].innerText.trim();
-                document.getElementById('edit_start').value = cells[2].innerText.trim();
-                document.getElementById('edit_responsible').value = cells[1].innerText.trim();
-                document.getElementById('edit_duration').value = cells[3].innerText.trim();
+                document.getElementById('edit_name').value = cells[1].innerText.trim();
+                document.getElementById('edit_start').value = cells[3].innerText.trim();
+                document.getElementById('edit_responsible').value = cells[2].innerText.trim();
+                document.getElementById('edit_duration').value = cells[4].innerText.trim();
                 document.getElementById('edit_percent_complete').value = document.querySelector('input[name="percent_complete"]').value;
                 new bootstrap.Modal(modalEl).show();
             }

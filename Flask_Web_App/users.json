@@ -10,5 +10,41 @@
     "username": "thomascupchurch",
     "password_hash": "scrypt:32768:8:1$Zl1dOY4IupGKVaEx$34b8b92a91973eeaf879c52cfa3ccee97241f26edc1f2d96574b5548cae63ea7c2f53872fcb02b5b40a4fa804337db730ba5d03fe314d4b210e68eaa45641f76",
     "is_admin": true
+  },
+  {
+    "id": "829cb707-8f33-420b-8782-5a0abae26f18",
+    "username": "testuser_15ba71fc",
+    "password_hash": "scrypt:32768:8:1$D94rXlA5hJwnDDXi$1c6a55d03f473eb7270039811e2da42d9a4b6b15ea39185c1dc88b3026d1e7939511807bcb98be4d4771204137c574a4e42b7a4f6cea1a20879409c22d165b61",
+    "is_admin": false
+  },
+  {
+    "id": "d286270d-769a-40b7-b33a-046b854765a9",
+    "username": "testuser_e1159b24",
+    "password_hash": "scrypt:32768:8:1$KnlnBIp5UGhMaVBV$7e890a287d2d46bbd0b5632173000fca14d03b46256d3138afbef80145b3cdc2744709bdcbf1d7276695f9462b44456489526974c501be715621509622f42e1d",
+    "is_admin": false
+  },
+  {
+    "id": "4c24cca1-5925-4427-9f09-b8e76e1d2b50",
+    "username": "testuser_238b6c99",
+    "password_hash": "scrypt:32768:8:1$RigD3oiAi7t6yjRw$b6619f93afce4d2325d549e5152c33c43f38c9d58b4afaf8be0bca1ea0b7dfec816815e2030034eb168e41d48442098b124f0f748ff9f28a6a5ae3fe6ecb490c",
+    "is_admin": false
+  },
+  {
+    "id": "7dd8187e-36d2-4b1f-9e9e-21bdf70671d0",
+    "username": "testuser_f33a273f",
+    "password_hash": "scrypt:32768:8:1$T7bHip31178zsK1O$9da05ecdda21de57e7e5ce84524458e44f04ad21ee8b0b986d1c7ab989f90cc198a5b66539a6bf6d5b3c960835b8c75f9b20d29f26c3992ffc48494163757d8d",
+    "is_admin": false
+  },
+  {
+    "id": "9ec975db-54b9-498e-9193-8309c0a168dc",
+    "username": "testuser_a154d108",
+    "password_hash": "scrypt:32768:8:1$PqAv3PU3IJvpAbXr$1e9462cb94099ac55f8402fc25cbb9b6f63ce770adea026b44c6316cdd39f0f6e53c682bd730a7824da4e168181621b38070948b5d543a34e824a36eb276336c",
+    "is_admin": false
+  },
+  {
+    "id": "9fcb033a-8643-431a-ac70-5095688ff220",
+    "username": "testuser_dcc3f594",
+    "password_hash": "scrypt:32768:8:1$riTeGjkH6pwkym3C$f4130a0b0d840d91f468fa9aa11ba48baf059030474275174a202653d3e4d7782f38f5a8f7ce0efa19a86cc53d736700ca78712b91cee3afac6078614b316fde",
+    "is_admin": false
   }
 ]
