@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (t.percent_complete) details += `\nProgress: ${t.percent_complete}%`;
             if (t.attachments && t.attachments.length > 0) details += `\nAttachments: ${t.attachments.join(', ')}`;
             if (t.pdf_page) details += `\nPDF Page: ${t.pdf_page}`;
-            if (t.parent) details += `\nSub-task of #${t.parent}`;
+            if (t.parent) details += `\nSub-item of #${t.parent}`;
             alert(details);
         }
     });

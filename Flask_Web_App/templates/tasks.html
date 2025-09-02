@@ -6,10 +6,10 @@
     </div>
     {% endif %}
 <div class="container my-4">
-    <h2 class="mb-4">Tasks List & Creation</h2>
+    <h2 class="mb-4">Items List & Creation</h2>
     <div class="form-check form-switch mb-3">
         <input class="form-check-input" type="checkbox" id="hideExternalTasksToggle">
-        <label class="form-check-label" for="hideExternalTasksToggle">Hide External Tasks & Milestones</label>
+    <label class="form-check-label" for="hideExternalTasksToggle">Hide External Items & Milestones</label>
     </div>
     <form method="post" enctype="multipart/form-data" class="row g-3 mb-4">
         <div class="col-md-3">
@@ -29,7 +29,7 @@
             <input type="text" class="form-control" name="share_with" placeholder="Share with (comma-separated usernames)">
         </div>
         <div class="col-md-3">
-            <input type="text" class="form-control" name="name" placeholder="Task Name" required>
+            <input type="text" class="form-control" name="name" placeholder="Item Name" required>
         </div>
         <div class="col-md-2">
             <input type="date" class="form-control" name="start" placeholder="Start Date">
@@ -44,7 +44,7 @@
             <input type="number" class="form-control" name="percent_complete" placeholder="% Complete" min="0" max="100">
         </div>
         <div class="col-md-1 d-flex align-items-end">
-            <button type="submit" class="btn btn-primary w-100">Add Task</button>
+            <button type="submit" class="btn btn-primary w-100">Add Item</button>
         </div>
         <div class="col-12">
             <a class="btn btn-link p-0" data-bs-toggle="collapse" href="#advancedFields" role="button" aria-expanded="false" aria-controls="advancedFields">
@@ -55,7 +55,7 @@
             <div class="card card-body mt-3">
                 <div class="row g-3">
                     <div class="col-md-3">
-                        <input type="text" class="form-control" name="depends_on" placeholder="Depends On (Task Name)">
+                        <input type="text" class="form-control" name="depends_on" placeholder="Depends On (Item Name)">
                     </div>
                     <div class="col-md-3">
                         <input type="text" class="form-control" name="resources" placeholder="Resources">
@@ -67,7 +67,17 @@
                         <input type="text" class="form-control" name="pdf_page" placeholder="PDF Page">
                     </div>
                     <div class="col-md-3">
-                        <input type="text" class="form-control" name="parent" placeholder="Parent Task Name">
+                        <select class="form-select" name="pdf_file">
+                            <option value="">PDF File</option>
+                            {% if pdf_files %}
+                                {% for f in pdf_files %}
+                                    <option value="{{ f }}">{{ f }}</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="parent" placeholder="Parent Item Name">
                     </div>
                     <div class="col-md-3">
                         <input type="text" class="form-control" name="milestone" placeholder="Milestone">
@@ -83,7 +93,7 @@
                     </div>
                     <div class="col-md-3 form-check">
                         <input class="form-check-input" type="checkbox" name="external_task" id="external_task_add">
-                        <label class="form-check-label" for="external_task_add">External Task</label>
+                        <label class="form-check-label" for="external_task_add">External Item</label>
                     </div>
                     <div class="col-md-3 form-check">
                         <input class="form-check-input" type="checkbox" name="external_milestone" id="external_milestone_add">
@@ -104,6 +114,8 @@
                     <th>Status</th>
                     <th>Progress</th>
                     <th>Milestone</th>
+                    <th>PDF File</th>
+                    <th>PDF Pg</th>
                     <th>Ext</th>
                     <th>Parent</th>
                     <th>Depends On</th>
@@ -140,8 +152,10 @@
                             </div>
                         </td>
                         <td>{{ task.milestone }}</td>
+                        <td>{{ task.pdf_file }}</td>
+                        <td>{{ task.pdf_page }}</td>
                         <td>
-                            {% if task.external_task %}<span class="badge bg-danger">Task</span>{% endif %}
+                            {% if task.external_item or task.external_task %}<span class="badge bg-danger">Item</span>{% endif %}
                             {% if task.external_milestone %}<span class="badge bg-danger">Milestone</span>{% endif %}
                         </td>
                         <td>{{ task.parent }}</td>
@@ -165,19 +179,19 @@
             </tbody>
         </table>
 
-        <!-- Edit Task Modal -->
+    <!-- Edit Item Modal -->
         <div class="modal fade" id="editTaskModal" tabindex="-1" aria-labelledby="editTaskModalLabel" aria-hidden="true">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <form id="edit-task-form" method="post">
                         <div class="modal-header">
-                            <h5 class="modal-title" id="editTaskModalLabel">Edit Task</h5>
+                            <h5 class="modal-title" id="editTaskModalLabel">Edit Item</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
                             <input type="hidden" name="edit_idx" id="edit_idx_modal">
                             <div class="mb-2">
-                                <label class="form-label">Task Name</label>
+                                <label class="form-label">Item Name</label>
                                 <input type="text" class="form-control" name="name" id="edit_name" required>
                             </div>
                             <div class="mb-2">
@@ -206,7 +220,7 @@
                             </div>
                             <div class="mb-2 form-check">
                                 <input class="form-check-input" type="checkbox" name="external_task" id="edit_external_task">
-                                <label class="form-check-label" for="edit_external_task">External Task</label>
+                                <label class="form-check-label" for="edit_external_task">External Item</label>
                             </div>
                             <div class="mb-2 form-check">
                                 <input class="form-check-input" type="checkbox" name="external_milestone" id="edit_external_milestone">
@@ -233,6 +247,17 @@
                                 <input type="text" class="form-control" name="pdf_page" id="edit_pdf_page">
                             </div>
                             <div class="mb-2">
+                                <label class="form-label">PDF File</label>
+                                <select class="form-select" name="pdf_file" id="edit_pdf_file">
+                                    <option value="">(none)</option>
+                                    {% if pdf_files %}
+                                        {% for f in pdf_files %}
+                                            <option value="{{ f }}">{{ f }}</option>
+                                        {% endfor %}
+                                    {% endif %}
+                                </select>
+                            </div>
+                            <div class="mb-2">
                                 <label class="form-label">Document Links (comma separated)</label>
                                 <input type="text" class="form-control" name="document_links" id="edit_document_links">
                             </div>
@@ -257,8 +282,8 @@
 <script>
 // Modal edit logic, delete, and attachment editing
 document.addEventListener('DOMContentLoaded', function() {
-    // Get tasks data from a JS variable injected by Jinja
-    const tasksData = {{ tasks|tojson }};
+    // Get items data from a JS variable injected by Jinja
+    const itemsData = {{ tasks|tojson|safe }}; // data for edit modal
     const hideToggle = document.getElementById('hideExternalTasksToggle');
     function applyExternalFilter() {
         const hide = hideToggle.checked;
@@ -315,17 +340,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             document.getElementById('edit_percent_complete').value = percentValue;
             document.getElementById('edit_milestone').value = cells[7].innerText.trim();
-            document.getElementById('edit_parent').value = cells[8].innerText.trim();
-            document.getElementById('edit_depends_on').value = cells[9].innerText.trim();
+            const pdfFileVal = cells[8].innerText.trim();
+            const pdfPgVal = cells[9].innerText.trim();
+            document.getElementById('edit_parent').value = cells[11].innerText.trim();
+            document.getElementById('edit_depends_on').value = cells[12].innerText.trim();
             // Advanced fields (resources, notes, pdf_page, document_links)
-            document.getElementById('edit_resources').value = tasksData[idx].resources || '';
-            document.getElementById('edit_notes').value = tasksData[idx].notes || '';
-            document.getElementById('edit_pdf_page').value = tasksData[idx].pdf_page || '';
-            document.getElementById('edit_document_links').value = (tasksData[idx].document_links || []).join(', ');
-            document.getElementById('edit_external_task').checked = !!tasksData[idx].external_task;
-            document.getElementById('edit_external_milestone').checked = !!tasksData[idx].external_milestone;
+            document.getElementById('edit_resources').value = itemsData[idx].resources || '';
+            document.getElementById('edit_notes').value = itemsData[idx].notes || '';
+            document.getElementById('edit_pdf_page').value = pdfPgVal || itemsData[idx].pdf_page || '';
+            const editPdfFileSel = document.getElementById('edit_pdf_file');
+            if(editPdfFileSel){
+                editPdfFileSel.value = pdfFileVal || itemsData[idx].pdf_file || '';
+            }
+            document.getElementById('edit_document_links').value = (itemsData[idx].document_links || []).join(', ');
+            document.getElementById('edit_external_task').checked = !!(itemsData[idx].external_item || itemsData[idx].external_task);
+            document.getElementById('edit_external_milestone').checked = !!itemsData[idx].external_milestone;
             // Attachments
-            const attachments = tasksData[idx].attachments || [];
+            const attachments = itemsData[idx].attachments || [];
             const listDiv = document.getElementById('edit_attachments_list');
             listDiv.innerHTML = '';
             if (attachments.length > 0) {

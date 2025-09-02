@@ -36,12 +36,13 @@
         <h1 class="mb-4">TU's Project Hub</h1>
         <div class="mb-4">
             <a href="/" class="btn btn-outline-dark me-2">Dashboard</a>
-            <a href="/tasks" class="btn btn-outline-secondary me-2">Tasks</a>
+            <a href="/tasks" class="btn btn-outline-secondary me-2">Items</a>
             <a href="/calendar" class="btn btn-outline-primary me-2">Calendar View</a>
             <a href="/kanban" class="btn btn-outline-success me-2">Kanban Board</a>
             <a href="/gantt" class="btn btn-outline-warning me-2">Gantt Chart</a>
             <a href="/gantt_interactive" class="btn btn-outline-warning me-2">Interactive Gantt</a>
-            <a href="/timeline" class="btn btn-outline-info">Project Timeline</a>
+            <a href="/timeline" class="btn btn-outline-info me-2">Project Timeline</a>
+            <a href="/resources" class="btn btn-outline-secondary me-2">Resources</a>
             {% if current_user.is_authenticated and current_user.is_admin %}
             <a href="/control-panel" class="btn btn-outline-dark">Control Panel</a>
             {% endif %}

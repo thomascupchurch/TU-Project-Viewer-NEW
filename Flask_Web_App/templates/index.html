@@ -18,7 +18,7 @@
                 {% endif %}
             </div>
         </div>
-        <!-- Right: Tasks and Gantt chart (50%) -->
+    <!-- Right: Items and Gantt chart (50%) -->
         <div class="d-flex flex-column" style="flex: 1 1 0; min-width: 0; max-width: 50vw; height: 100%;">
             <div class="mb-3">
                 <h4>Project Save/Load</h4>
@@ -32,10 +32,10 @@
             <div class="mb-3 d-flex flex-column flex-grow-1" style="min-height: 0; height: 100%;">
                 {% if not can_edit_flag %}
                 <div class="alert alert-warning py-2 mb-2" role="alert" id="editingDisabledBanner">
-                    <strong>Read-Only Mode:</strong> Editing is currently restricted to admins. You can view tasks but cannot create or modify them.
+                    <strong>Read-Only Mode:</strong> Editing is currently restricted to admins. You can view items but cannot create or modify them.
                 </div>
                 {% endif %}
-                                <h4 class="d-flex align-items-center">Tasks
+                                <h4 class="d-flex align-items-center">Items
                                     <div class="form-check form-switch ms-3 mb-0">
                                         <input class="form-check-input" type="checkbox" id="hideExternalTasksToggle">
                                         <label class="form-check-label" for="hideExternalTasksToggle" style="font-size:0.85em;">Hide External</label>
@@ -46,7 +46,7 @@
                         <input type="text" id="newPhaseName" class="form-control" placeholder="New Phase Name">
                         <button class="btn btn-outline-primary" type="button" id="addPhaseBtn">Add Phase</button>
                     </div>
-                    <small class="text-muted">Add a phase, then select it for tasks.</small>
+                    <small class="text-muted">Add a phase, then select it for items.</small>
                 </div>
                 <form method="post" enctype="multipart/form-data" class="row g-3 mb-2" id="task-form" {% if not can_edit_flag %}style="pointer-events: none; opacity:0.6;"{% endif %}>
                     <input type="hidden" name="edit_idx" id="edit_idx" value="">
@@ -64,7 +64,7 @@
                         <input type="text" class="form-control" name="share_with" placeholder="Share with usernames">
                     </div>
                     <div class="col-md-2">
-                        <input type="text" class="form-control" name="name" placeholder="Task Name" required>
+                        <input type="text" class="form-control" name="name" placeholder="Item Name" required>
                     </div>
                     <div class="col-md-2">
                         <input type="date" class="form-control" name="start" placeholder="Start Date">
@@ -88,10 +88,20 @@
                         <input type="text" class="form-control" name="notes" placeholder="Notes">                    
                     </div>
                     <div class="col-md-2">
-                        <input type="text" class="form-control" name="pdf_page" placeholder="PDF Page">                    
+                        <input type="text" class="form-control" name="pdf_page" placeholder="PDF Page">
                     </div>
                     <div class="col-md-2">
-                        <input type="text" class="form-control" name="parent" placeholder="Parent Task Name">                    
+                        <select class="form-select" name="pdf_file">
+                            <option value="">PDF File</option>
+                            {% if pdf_files %}
+                                {% for f in pdf_files %}
+                                    <option value="{{ f }}">{{ f }}</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" class="form-control" name="parent" placeholder="Parent Item Name">                    
                     </div>
                     <div class="col-md-2">
                         <input type="text" class="form-control" name="milestone" placeholder="Milestone">                    
@@ -107,14 +117,14 @@
                     </div>
                     <div class="col-md-2 form-check mt-2">
                         <input class="form-check-input" type="checkbox" name="external_task" id="external_task_index">
-                        <label class="form-check-label" for="external_task_index">External Task</label>
+                        <label class="form-check-label" for="external_task_index">External Item</label>
                     </div>
                     <div class="col-md-2 form-check mt-2">
                         <input class="form-check-input" type="checkbox" name="external_milestone" id="external_milestone_index">
                         <label class="form-check-label" for="external_milestone_index">External Milestone</label>
                     </div>
                     <div class="col-12">
-                        <button type="submit" class="btn btn-primary" {% if not can_edit_flag %}disabled{% endif %}>Add Task</button>
+                        <button type="submit" class="btn btn-primary" {% if not can_edit_flag %}disabled{% endif %}>Add Item</button>
                     </div>
                 </form>
                     <div class="flex-grow-1 d-flex flex-column" style="min-height: 0; height: 100%;">
@@ -130,7 +140,8 @@
                                         <th>Depends</th>
                                         <th>Resrc</th>
                                         <th>Notes</th>
-                                        <th>PDF</th>
+                                        <th>PDF File</th>
+                                        <th>PDF Pg</th>
                                         <th>Status</th>
                                         <th>%</th>
                                         <th>Parent</th>
@@ -143,7 +154,7 @@
                                 <tbody>
                                 {% if tasks %}
                                     {% for task in tasks %}
-                                    <tr class="task-row" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
+                                    <tr class="item-row" data-pdf-file="{{ task.pdf_file|default('') }}" data-pdf-page="{{ task.pdf_page|default('') }}" data-task-idx="{{ loop.index0 }}">
                                         <td>{{ task.phase }}</td>
                                         <td style="white-space: pre;">{{ task.name }}</td>
                                         <td>{{ task.responsible }}</td>
@@ -152,6 +163,7 @@
                                         <td>{{ task.depends_on }}</td>
                                         <td>{{ task.resources }}</td>
                                         <td>{{ task.notes }}</td>
+                                        <td>{{ task.pdf_file }}</td>
                                         <td>{{ task.pdf_page }}</td>
                                         <td>{{ task.status|default('Not Started') }}</td>
                                         <td>
@@ -164,7 +176,7 @@
                                             </div>
                                         </td>
                                         <td>{{ task.parent }}</td>
-                                        <td>{% if task.external_task %}<span class="badge bg-danger">T</span>{% endif %}{% if task.external_milestone %} <span class="badge bg-danger">M</span>{% endif %}</td>
+                                        <td>{% if task.external_item or task.external_task %}<span class="badge bg-danger">I</span>{% endif %}{% if task.external_milestone %} <span class="badge bg-danger">M</span>{% endif %}</td>
                                         <td>
                                             {% if task.attachments and task.attachments|length > 0 %}
                                                 <div class="d-flex flex-wrap gap-1 align-items-center">
@@ -202,7 +214,7 @@
                                     </tr>
                                     {% endfor %}
                                 {% else %}
-                                    <tr><td colspan="14" class="text-center text-muted">No tasks yet.</td></tr>
+                                    <tr><td colspan="14" class="text-center text-muted">No items yet.</td></tr>
                                 {% endif %}
                             </tbody>
                         </table>
@@ -234,7 +246,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     });
-    // Delete task AJAX
+    // Delete item AJAX
     document.querySelectorAll('.delete-task-btn').forEach(function(btn) {
         btn.addEventListener('click', function(e) {
             e.stopPropagation();
@@ -248,7 +260,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    // Remove the task row visually
+                    // Remove the item row visually
                     const row = btn.closest('tr');
                     if (row) row.remove();
                 } else {
@@ -299,7 +311,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const hideToggle = document.getElementById('hideExternalTasksToggle');
     function applyExternalFilter(){
         const hide = hideToggle && hideToggle.checked;
-        document.querySelectorAll('.task-row').forEach(tr=>{
+    document.querySelectorAll('.item-row').forEach(tr=>{
             const hasExt = tr.querySelector('.badge.bg-danger') !== null;
             tr.style.display = hide && hasExt ? 'none' : '';
         });
@@ -310,7 +322,7 @@ document.addEventListener('DOMContentLoaded', function() {
         hideToggle.addEventListener('change', ()=>{ localStorage.setItem('hideExternalDash', hideToggle.checked?'1':'0'); applyExternalFilter(); });
         applyExternalFilter();
     }
-    // Edit button logic: load task data into form
+    // Edit button logic: load item data into form
     document.querySelectorAll('.edit-task-btn').forEach(function(btn) {
         btn.addEventListener('click', function() {
             const idx = btn.getAttribute('data-task-idx');
@@ -325,7 +337,15 @@ document.addEventListener('DOMContentLoaded', function() {
             document.querySelector('input[name="depends_on"]').value = cells[5].innerText.trim();
             document.querySelector('input[name="resources"]').value = cells[6].innerText.trim();
             document.querySelector('input[name="notes"]').value = cells[7].innerText.trim();
-            document.querySelector('input[name="pdf_page"]').value = cells[8].innerText.trim();
+            // Adjust indices after inserting PDF File column (Phase,Name,Resp,Start,Dur,Depends,Resrc,Notes,PDF File,PDF Pg,...)
+            document.querySelector('input[name="pdf_page"]').value = cells[9].innerText.trim();
+            const pdfFileSel = document.querySelector('select[name="pdf_file"]');
+            if(pdfFileSel){
+                const fileVal = cells[8].innerText.trim();
+                if(fileVal){
+                    pdfFileSel.value = fileVal;
+                }
+            }
             document.getElementById('status').value = cells[9].innerText.trim() || 'Not Started';
             // Extract percent from progress bar text (e.g., '45%')
             let percentText = cells[10].innerText.trim();
@@ -364,19 +384,19 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     // PDF click-to-jump logic
-    document.querySelectorAll('.task-row').forEach(function(row) {
+    document.querySelectorAll('.item-row').forEach(function(row) {
         row.addEventListener('click', function(e) {
             // Prevent click if edit button is clicked
             if (e.target.classList.contains('edit-task-btn')) return;
             const page = row.getAttribute('data-pdf-page');
+            const file = row.getAttribute('data-pdf-file');
             if (page && !isNaN(page) && Number(page) > 0) {
                 const iframe = document.getElementById('pdfjs-viewer');
                 if (iframe) {
-                    let src = iframe.getAttribute('src') || '';
-                    src = src.replace(/#page=\d+/, '');
-                    src = src.split('#')[0];
-                    src += '#page=' + page;
-                    iframe.setAttribute('src', src);
+                    const chosen = file ? encodeURIComponent('/pdf/' + file) : '/pdf';
+                    let base = '/static/pdfjs/web/viewer.html?file=' + chosen;
+                    base += '#page=' + page;
+                    iframe.setAttribute('src', base);
                 }
             }
         });
@@ -394,11 +414,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-<!-- Edit Task Modal -->
+<!-- Edit Item Modal -->
 <div class="modal fade" id="editTaskModal" tabindex="-1" aria-labelledby="editTaskModalLabel" aria-hidden="true">
     <div class="modal-dialog"><div class="modal-content">
         <form method="post" enctype="multipart/form-data">
-            <div class="modal-header"><h5 class="modal-title" id="editTaskModalLabel">Edit Task (Quick)</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-header"><h5 class="modal-title" id="editTaskModalLabel">Edit Item (Quick)</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body">
                 <input type="hidden" name="edit_idx" id="edit_idx_modal">
                 <div class="mb-2"><label class="form-label">Name</label><input class="form-control" name="name" id="edit_name" required></div>

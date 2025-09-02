@@ -35,7 +35,7 @@
                     <span>PDF Page: {{ task.pdf_page }}</span><br>
                     {% endif %}
                     {% if task.parent %}
-                    <span class="text-info">Sub-task of #{{ task.parent }}</span><br>
+                    <span class="text-info">Sub-item of #{{ task.parent }}</span><br>
                     {% endif %}
                 </div>
             {% endfor %}

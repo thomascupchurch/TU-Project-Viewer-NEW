@@ -1,86 +1,43 @@
+"""Flask application main module (repaired header)."""
 
+# --- Proper Imports & Initialization (reconstructed after corruption) ---
+import os, io, json, csv, time, uuid, secrets, zipfile, re
+from datetime import datetime, timedelta
+from functools import wraps
 
-
-# --- Imports ---
-import csv
-import os
-import time
-import secrets
-import io
-import json
+from flask import (
+    Flask, render_template, request, redirect, url_for, jsonify,
+    send_file, send_from_directory, make_response, abort, Response, flash
+)
+from flask_login import (
+    LoginManager, UserMixin, login_user, logout_user,
+    login_required, current_user
+)
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 import matplotlib
-matplotlib.use('Agg')  # Use non-GUI backend for server
+matplotlib.use('Agg')  # headless environments
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for, Response, send_from_directory, send_file, flash, make_response, jsonify, session
-import zipfile
-import pytz
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
-try:
-    import portalocker  # File locking
-except ImportError:  # Fallback no-op locking so app doesn't crash if dependency missing
-    class _PortalockerFallback:
-        LOCK_SH = 1
-        LOCK_EX = 2
-        @staticmethod
-        def lock(f, mode):
-            return True
-        @staticmethod
-        def unlock(f):
-            return True
-    portalocker = _PortalockerFallback()
+from resources_bp import resources_bp
+from auth_bp import auth_bp
 
+from db import (
+    db, UserDB, PhaseDB, ItemDB, TaskDB, SettingDB, ContactDB, AssetDB,
+    ensure_admin_user, migrate_tasks_to_items
+)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
-# Use environment variable for secret key (fallback only for dev)
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-insecure-change-me')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# --- Base directory & path helpers ---
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+db.init_app(app)
 
-def _atomic_write_json(path, data):
-    """Write JSON atomically to avoid partial writes (write temp then replace)."""
-    import tempfile
-    dir_ = os.path.dirname(path)
-    os.makedirs(dir_, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=dir_, prefix='.tmp_', suffix='.json')
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as tmp_f:
-            json.dump(data, tmp_f, indent=2, ensure_ascii=False)
-        os.replace(tmp_path, path)
-    finally:
-        # In rare failure cases ensure temp removed
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-
-# --- Flask-Login setup ---
-login_manager = LoginManager()
-login_manager.init_app(app)
+login_manager = LoginManager(app)
 login_manager.login_view = 'login'
-
-# --- User Model ---
-import uuid
-USERS_FILE = os.path.join(BASE_DIR, 'users.json')
-SETTINGS_FILE = os.path.join(BASE_DIR, 'settings.json')
-users = []
-settings = {
-    'open_editing': False  # False => only admins can edit; True => any authenticated user can edit their tasks
-}
-
-# --- Password complexity helper ---
-def password_errors(pw: str):
-    errs = []
-    if len(pw) < 8: errs.append('at least 8 characters')
-    if not any(c.islower() for c in pw): errs.append('a lowercase letter')
-    if not any(c.isupper() for c in pw): errs.append('an uppercase letter')
-    if not any(c.isdigit() for c in pw): errs.append('a digit')
-    if not any(c in '!@#$%^&*()-_=+[]{};:,<.>/?' for c in pw): errs.append('a special character')
-    return errs
 
 class User(UserMixin):
     def __init__(self, id, username, password_hash, is_admin=False):
@@ -88,95 +45,176 @@ class User(UserMixin):
         self.username = username
         self.password_hash = password_hash
         self.is_admin = is_admin
-    def get_id(self):
-        return str(self.id)
-
-def load_users():
-    global users
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            try:
-                portalocker.lock(f, portalocker.LOCK_SH)
-                try:
-                    data = json.load(f)
-                finally:
-                    try:
-                        portalocker.unlock(f)
-                    except Exception:
-                        pass
-            except Exception:
-                data = []
-        if isinstance(data, list):
-            # Mutate list in-place so external references remain valid
-            users.clear()
-            users.extend(data)
-        else:
-            users.clear()
-    else:
-        users.clear()
-
-def save_users():
-    """Persist users list to disk with debug logging.
-    Simplified: no external lock file (low contention scenario)."""
-    try:
-        print(f"[DEBUG] save_users(): attempting write of {len(users)} users to {USERS_FILE}")
-        _atomic_write_json(USERS_FILE, users)
-        # Immediate read-back verification
-        with open(USERS_FILE, 'r', encoding='utf-8') as rf:
-            data = json.load(rf)
-        print(f"[DEBUG] save_users(): verification read got {len(data)} users")
-    except Exception as e:
-        print(f"[ERROR] save_users(): {e}")
-
-def load_settings():
-    global settings
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
-                portalocker.lock(f, portalocker.LOCK_SH)
-                try:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        settings.update(data)
-                finally:
-                    portalocker.unlock(f)
-        except Exception:
-            pass
-
-def save_settings():
-    try:
-        lock_path = SETTINGS_FILE + '.lock'
-        with open(lock_path, 'w') as lock_f:
-            portalocker.lock(lock_f, portalocker.LOCK_EX)
-            try:
-                _atomic_write_json(SETTINGS_FILE, settings)
-            finally:
-                portalocker.unlock(lock_f)
-    except Exception:
-        pass
-
-def can_edit():
-    """Return True if current user allowed to perform editing operations."""
-    if not current_user.is_authenticated:
-        return False
-    # Admins always
-    if getattr(current_user, 'is_admin', False):
-        return True
-    # Otherwise require open_editing flag
-    load_settings()
-    return bool(settings.get('open_editing'))
 
 @login_manager.user_loader
-def load_user(user_id):
-    for u in users:
-        if str(u['id']) == str(user_id):
-            return User(u['id'], u['username'], u['password_hash'], u.get('is_admin', False))
-    return None
+def load_user(user_id):  # pragma: no cover - simple loader
+    with app.app_context():
+        u = UserDB.query.get(user_id)
+        if u:
+            return User(u.id, u.username, u.password_hash, u.is_admin)
+        return None
 
-############################################
-# Authentication & User Management Routes  #
-############################################
+with app.app_context():
+    db.create_all()
+    try:
+        migrate_tasks_to_items(db.session)
+        ensure_admin_user(db.session)
+    except Exception as e:  # pragma: no cover
+        print('[WARN] Initialization issue:', e)
 
+# In-memory caches (populated by loaders defined later in file)
+users = []
+tasks = []
+phases = []
+settings = {}
+
+# Register resources blueprint
+app.register_blueprint(resources_bp)
+app.register_blueprint(auth_bp)
+
+# --- Items CRUD Page (clean, relocated) ---
+@app.route('/items', methods=['GET', 'POST'])
+@login_required
+def items_page():
+    """Items CRUD page (user-scoped view) with multi-PDF support."""
+    load_tasks(); load_phases(); load_settings()
+    try:
+        pdf_files = [f for f in os.listdir(os.path.join(BASE_DIR, 'static', 'uploads')) if f.lower().endswith('.pdf')]
+    except Exception:
+        pdf_files = []
+    user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id() or current_user.get_id() in t.get('shared_with', [])]
+    alert_message = None
+    if request.method == 'POST':
+        form = request.form
+        name = form.get('name', '').strip()
+        phase = form.get('phase', '').strip()
+        start = form.get('start', '').strip()
+        responsible = form.get('responsible', '').strip()
+        duration = form.get('duration', '').strip()
+        percent_complete = form.get('percent_complete', '0').strip()
+        status = form.get('status', '').strip() or 'Not Started'
+        milestone = form.get('milestone', '').strip()
+        parent = form.get('parent', '').strip()
+        depends_on = form.get('depends_on', '').strip()
+        resources = form.get('resources', '').strip()
+        notes = form.get('notes', '').strip()
+        pdf_page = form.get('pdf_page', '').strip()
+        pdf_file = form.get('pdf_file', '').strip()
+        document_links_raw = form.get('document_links', '').strip()
+        links_list = [l.strip() for l in document_links_raw.split(',') if l.strip()]
+        share_with_raw = form.get('share_with', '').strip()
+        share_with_ids = []
+        if share_with_raw:
+            load_users()
+            for uname in [u.strip() for u in share_with_raw.split(',') if u.strip()]:
+                urec = next((u for u in users if u['username'] == uname), None)
+                if urec:
+                    share_with_ids.append(urec['id'])
+        external_flag = form.get('external_item') or form.get('external_task')
+        external_item_flag = True if external_flag == 'on' else False
+        external_milestone = True if form.get('external_milestone') == 'on' else False
+        edit_idx = form.get('edit_idx', '').strip()
+        # Attachments
+        UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+        attachment_filenames = []
+        if 'attachments' in request.files:
+            for attachment in request.files.getlist('attachments'):
+                if attachment and attachment.filename:
+                    safe_name = attachment.filename.replace('..', '').replace('/', '_').replace('\\', '_')
+                    attachment.save(os.path.join(UPLOAD_FOLDER, safe_name))
+                    attachment_filenames.append(safe_name)
+        # Dependency enforcement
+        if depends_on:
+            dep_task = next((t for t in tasks if t['name'] == depends_on and t.get('user_id') == current_user.get_id()), None)
+            if dep_task and dep_task.get('start') and dep_task.get('duration'):
+                try:
+                    dep_start = datetime.strptime(dep_task['start'], '%Y-%m-%d')
+                    dep_duration = int(dep_task.get('duration', 1) or 1)
+                    dep_end_date = dep_start + timedelta(days=dep_duration)
+                    if start:
+                        this_start = datetime.strptime(start, '%Y-%m-%d')
+                        if this_start < dep_end_date:
+                            alert_message = f"Task '{name}' cannot start before its dependency '{depends_on}' is complete (>= {dep_end_date.strftime('%Y-%m-%d')})."
+                except Exception:
+                    pass
+        if alert_message:
+            return render_template('items.html', tasks=user_tasks, alert_message=alert_message, phases=phases, pdf_files=pdf_files)
+        # Edit
+        if edit_idx.isdigit() and int(edit_idx) < len(tasks):
+            task = tasks[int(edit_idx)]
+            if not can_edit():
+                flash('Editing is restricted to admins.')
+                return redirect(url_for('items_page'))
+            if task.get('user_id') != current_user.get_id() and not getattr(current_user, 'is_admin', False):
+                flash('You can only edit your own tasks.')
+                return redirect(url_for('items_page'))
+            with app.app_context():
+                rec = ItemDB.query.get(task['id'])
+                if rec:
+                    rec.name = name
+                    rec.phase = phase
+                    rec.start = start
+                    rec.responsible = responsible
+                    rec.duration = duration
+                    rec.percent_complete = percent_complete
+                    rec.status = status
+                    rec.milestone = milestone
+                    rec.parent = parent
+                    rec.depends_on = depends_on
+                    rec.resources = resources
+                    rec.notes = notes
+                    rec.pdf_page = pdf_page
+                    if pdf_file:
+                        rec.pdf_file = pdf_file
+                    rec.document_links = ','.join(links_list)
+                    rec.external_item = external_item_flag
+                    rec.external_milestone = external_milestone
+                    rec.shared_with = ','.join(share_with_ids)
+                    # merge attachments
+                    existing_att = [a for a in (rec.attachments.split(',') if rec.attachments else []) if a]
+                    for a in attachment_filenames:
+                        if a not in existing_att:
+                            existing_att.append(a)
+                    rec.attachments = ','.join(existing_att)
+                    db.session.commit()
+            load_tasks()
+            return redirect(url_for('items_page'))
+        # Create
+        if not can_edit():
+            flash('Editing is restricted to admins.')
+            return redirect(url_for('items_page'))
+        if name:
+            with app.app_context():
+                rec = ItemDB(
+                    user_id=current_user.get_id(),
+                    name=name,
+                    phase=phase,
+                    start=start,
+                    responsible=responsible,
+                    status=status,
+                    percent_complete=percent_complete or 0,
+                    attachments=','.join(attachment_filenames),
+                    notes=notes,
+                    milestone=milestone,
+                    duration=duration or 1,
+                    parent=parent,
+                    depends_on=depends_on,
+                    resources=resources,
+                    pdf_page=pdf_page,
+                    pdf_file=pdf_file or None,
+                    document_links=','.join(links_list),
+                    external_item=external_item_flag,
+                    external_milestone=external_milestone,
+                    shared_with=','.join(share_with_ids)
+                )
+                db.session.add(rec)
+                db.session.commit()
+            load_tasks()
+        return redirect(url_for('items_page'))
+    return render_template('items.html', tasks=user_tasks, alert_message=alert_message, phases=phases, pdf_files=pdf_files)
+
+# Re-define register route (was earlier in file) if corrupted by edits
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     load_users()
@@ -349,197 +387,143 @@ def logout():
     flash('Logged out.')
     return redirect(url_for('login'))
 
-PHASES_FILE = os.path.join(BASE_DIR, 'phases.json')
+PHASES_FILE = None  # legacy removed
 phases = []
 
 def load_phases():
     global phases
-    if os.path.exists(PHASES_FILE):
-        with open(PHASES_FILE, 'r', encoding='utf-8') as f:
-            try:
-                portalocker.lock(f, portalocker.LOCK_SH)
-                phases = json.load(f)
-            finally:
-                try:
-                    portalocker.unlock(f)
-                except Exception:
-                    pass
-    else:
-        phases = []
+    try:
+        with app.app_context():
+            db_phases = PhaseDB.query.order_by(PhaseDB.id.asc()).all()
+            phases = [{'id': p.id, 'name': p.name} for p in db_phases]
+    except Exception as e:
+        print('[ERROR] load_phases DB:', e)
 
 def save_phases():
-    lock_path = PHASES_FILE + '.lock'
-    with open(lock_path, 'w') as lock_f:
-        portalocker.lock(lock_f, portalocker.LOCK_EX)
-        try:
-            _atomic_write_json(PHASES_FILE, phases)
-        finally:
-            portalocker.unlock(lock_f)
+    # Persist in-memory phases list back to DB (used after modifications)
+    try:
+        with app.app_context():
+            existing = {p.id: p for p in PhaseDB.query.all()}
+            # Upsert existing by id; new phases without id handled earlier.
+            for p in phases:
+                if 'id' in p and p['id'] in existing:
+                    existing[p['id']].name = p['name']
+            db.session.commit()
+    except Exception as e:
+        print('[ERROR] save_phases DB:', e)
 
 @app.route('/create_phase', methods=['POST'])
 @login_required
 def create_phase():
     """Create a phase (global). Accepts JSON: {"name": "Phase Name"}."""
-    load_phases()
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get('name') or '').strip()
     if not name:
         return jsonify({'success': False, 'error': 'Name required'}), 400
-    if any(p.get('name') == name for p in phases):
-        return jsonify({'success': False, 'error': 'Phase already exists'}), 409
-    phases.append({'id': len(phases) + 1, 'name': name})
-    save_phases()
-    return jsonify({'success': True, 'phase': {'id': phases[-1]['id'], 'name': name}})
+    with app.app_context():
+        if PhaseDB.query.filter(db.func.lower(PhaseDB.name) == name.lower()).first():
+            return jsonify({'success': False, 'error': 'Phase already exists'}), 409
+        phase = PhaseDB(name=name)
+        db.session.add(phase)
+        db.session.commit()
+        return jsonify({'success': True, 'phase': {'id': phase.id, 'name': phase.name}})
 
 # --- Phase creation ---
 @app.route('/phases', methods=['GET', 'POST'])
 @login_required
 def phases_page():
-    load_phases()
     if request.method == 'POST':
         phase_name = request.form.get('phase_name', '').strip()
-        if phase_name and not any(p['name'] == phase_name for p in phases):
-            phases.append({'id': len(phases) + 1, 'name': phase_name, 'user_id': current_user.get_id()})
-            save_phases()
-    return render_template('phases.html', phases=[p for p in phases if p['user_id'] == current_user.get_id()])
-from flask_login import login_required, current_user
+        if phase_name:
+            with app.app_context():
+                if not PhaseDB.query.filter(db.func.lower(PhaseDB.name) == phase_name.lower()).first():
+                    db.session.add(PhaseDB(name=phase_name))
+                    db.session.commit()
+    with app.app_context():
+        db_phases = PhaseDB.query.order_by(PhaseDB.id.asc()).all()
+        return render_template('phases.html', phases=[{'id': p.id, 'name': p.name} for p in db_phases])
 
 @app.route('/tasks', methods=['GET', 'POST'])
 @login_required
 def tasks_page():
-    print("HIT /tasks route")
-    load_tasks()
-    load_phases()
-    load_settings()
-    alert_message = None
-    # Only show tasks for the current user (or shared)
-    user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id() or (current_user.get_id() in t.get('shared_with', []))]
-
+    # Backward compatibility redirect
     if request.method == 'POST':
-        # --- Gather form data ---
-        share_with = request.form.get('share_with', '').strip()
-        share_with_ids = []
-        if share_with:
-            load_users()
-            for uname in [u.strip() for u in share_with.split(',') if u.strip()]:
-                user = next((u for u in users if u['username'] == uname), None)
-                if user:
-                    share_with_ids.append(user['id'])
-        name = request.form.get('name', '').strip()
-        phase = request.form.get('phase', '').strip()
-        start = request.form.get('start', '').strip()
-        responsible = request.form.get('responsible', '').strip()
-        duration = request.form.get('duration', '').strip()
-        percent_complete = request.form.get('percent_complete', '0').strip()
-        status = request.form.get('status', '').strip()
-        milestone = request.form.get('milestone', '').strip()
-        parent = request.form.get('parent', '').strip()
-        depends_on = request.form.get('depends_on', '').strip()
-        resources = request.form.get('resources', '').strip()
-        notes = request.form.get('notes', '').strip()
-        pdf_page = request.form.get('pdf_page', '').strip()
-        document_links = request.form.get('document_links', '').strip()
-        external_task = True if request.form.get('external_task') == 'on' else False
-        external_milestone = True if request.form.get('external_milestone') == 'on' else False
-        edit_idx = request.form.get('edit_idx', '').strip()
-        links_list = [l.strip() for l in document_links.split(',') if l.strip()]
-        # Attachments
-        attachment_filenames = []
-        if 'attachments' in request.files:
-            for attachment in request.files.getlist('attachments'):
-                if attachment and attachment.filename:
-                    safe_name = attachment.filename.replace('..', '').replace('/', '_').replace('\\', '_')
-                    save_path = os.path.join(UPLOAD_FOLDER, safe_name)
-                    attachment.save(save_path)
-                    attachment_filenames.append(safe_name)
+        # process via items_page
+        return items_page()
+    return redirect(url_for('items_page'), code=301)
 
-        # --- Dependency enforcement ---
-        if depends_on:
-            dep_task = next((t for t in tasks if t['name'] == depends_on and t.get('user_id') == current_user.get_id()), None)
-            if dep_task and dep_task.get('start') and dep_task.get('duration'):
-                try:
-                    dep_start = datetime.strptime(dep_task['start'], '%Y-%m-%d')
-                    dep_duration = int(dep_task.get('duration', 1) or 1)
-                    dep_end_date = dep_start + timedelta(days=dep_duration)
-                    if start:
-                        this_start = datetime.strptime(start, '%Y-%m-%d')
-                        if this_start < dep_end_date:
-                            alert_message = f"Task '{name}' cannot start before its dependency '{depends_on}' is complete (must start on or after {dep_end_date.strftime('%Y-%m-%d')})."
-                except Exception:
-                    pass
-        if alert_message:
-            # Re-render with alert
-            user_tasks = [t for t in tasks if t.get('user_id') == current_user.get_id() or (current_user.get_id() in t.get('shared_with', []))]
-            return render_template('tasks.html', tasks=user_tasks, alert_message=alert_message, phases=phases)
-
-        # --- EDIT PATH ---
-        if edit_idx.isdigit() and int(edit_idx) < len(tasks):
-            idx = int(edit_idx)
-            task = tasks[idx]
-            if not can_edit():
-                flash('Editing is restricted to admins.')
-                return redirect(url_for('tasks_page'))
-            if task.get('user_id') != current_user.get_id() and not getattr(current_user, 'is_admin', False):
-                flash('You can only edit your own tasks.')
-                return redirect(url_for('tasks_page'))
-            merged_attachments = list(task.get('attachments', []))
-            for fname in attachment_filenames:
-                if fname not in merged_attachments:
-                    merged_attachments.append(fname)
-            task.update({
-                'name': name,
-                'phase': phase,
-                'start': start,
-                'responsible': responsible,
-                'duration': duration,
-                'percent_complete': percent_complete,
-                'status': status,
-                'milestone': milestone,
-                'parent': parent,
-                'depends_on': depends_on,
-                'resources': resources,
-                'notes': notes,
-                'pdf_page': pdf_page,
-                'document_links': links_list,
-                'external_task': external_task,
-                'external_milestone': external_milestone,
-                'shared_with': share_with_ids,
-                'attachments': merged_attachments
-            })
-            save_tasks()
-            return redirect(url_for('tasks_page'))
-        else:
-            # --- CREATE PATH ---
-            if not can_edit():
-                flash('Editing is restricted to admins.')
-                return redirect(url_for('tasks_page'))
-            if name:
-                tasks.append({
-                    'id': len(tasks) + 1,
-                    'user_id': current_user.get_id(),
-                    'name': name,
-                    'phase': phase,
-                    'start': start,
-                    'responsible': responsible,
-                    'status': status or 'Not Started',
-                    'percent_complete': percent_complete or 0,
-                    'attachments': attachment_filenames,
-                    'notes': notes,
-                    'milestone': milestone,
-                    'duration': duration or 1,
-                    'parent': parent,
-                    'depends_on': depends_on,
-                    'resources': resources,
-                    'pdf_page': pdf_page,
-                    'document_links': links_list,
-                    'external_task': external_task,
-                    'external_milestone': external_milestone,
-                    'shared_with': share_with_ids
-                })
-                save_tasks()
-            return redirect(url_for('tasks_page'))
-
-    return render_template('tasks.html', tasks=user_tasks, alert_message=alert_message, phases=phases)
+# --- One-time migration route (admin only) ---
+@app.route('/migrate_legacy_json')
+@login_required
+def migrate_legacy_json():
+    if not getattr(current_user, 'is_admin', False):
+        abort(403)
+    imported = {'users': 0, 'phases': 0, 'tasks': 0, 'settings': 0}
+    # Users (skip – already migrated by load/save users logic)
+    # Phases
+    if os.path.exists(PHASES_FILE):
+        with open(PHASES_FILE, 'r', encoding='utf-8') as f:
+            try:
+                data = json.load(f)
+            except Exception:
+                data = []
+        with app.app_context():
+            for p in data:
+                if not PhaseDB.query.filter_by(name=p.get('name')).first():
+                    db.session.add(PhaseDB(name=p.get('name')))
+                    imported['phases'] += 1
+            db.session.commit()
+    # Tasks
+    if os.path.exists(TASKS_FILE):
+        with open(TASKS_FILE, 'r', encoding='utf-8') as f:
+            try:
+                data = json.load(f)
+            except Exception:
+                data = []
+        with app.app_context():
+            for t in data:
+                if not t.get('name'):
+                    continue
+                if not TaskDB.query.filter_by(name=t.get('name')).first():
+                    db.session.add(TaskDB(
+                        user_id=t.get('user_id'),
+                        name=t.get('name'),
+                        phase=t.get('phase'),
+                        start=t.get('start'),
+                        duration=t.get('duration'),
+                        responsible=t.get('responsible'),
+                        status=t.get('status'),
+                        percent_complete=t.get('percent_complete'),
+                        milestone=t.get('milestone'),
+                        parent=t.get('parent'),
+                        depends_on=t.get('depends_on'),
+                        resources=t.get('resources'),
+                        notes=t.get('notes'),
+                        pdf_page=t.get('pdf_page'),
+                        external_task=t.get('external_task', False),
+                        external_milestone=t.get('external_milestone', False),
+                        document_links=','.join(t.get('document_links', [])) if isinstance(t.get('document_links'), list) else (t.get('document_links') or ''),
+                        attachments=','.join(t.get('attachments', [])) if isinstance(t.get('attachments'), list) else (t.get('attachments') or ''),
+                        shared_with=','.join(t.get('shared_with', [])) if isinstance(t.get('shared_with'), list) else (t.get('shared_with') or ''),
+                    ))
+                    imported['tasks'] += 1
+            db.session.commit()
+    # Settings
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            try:
+                data = json.load(f)
+            except Exception:
+                data = {}
+        if isinstance(data, dict):
+            with app.app_context():
+                for k,v in data.items():
+                    if not SettingDB.query.get(k):
+                        db.session.add(SettingDB(key=k, value=str(v)))
+                        imported['settings'] += 1
+                db.session.commit()
+    load_tasks(); load_phases(); load_settings()
+    return jsonify({'success': True, 'imported': imported})
 
 # --- iCalendar Export Route ---
 @app.route('/calendar_export_ics')
@@ -747,36 +731,60 @@ def kanban_view():
 @login_required
 def tasks_json():
     # Return all fields for each task, including id and parent (by id)
-    return jsonify(tasks)
+    enriched = []
+    for t in tasks:
+        td = dict(t)
+        # ensure pdf_file present even if older cache entries
+        if 'pdf_file' not in td:
+            td['pdf_file'] = ''
+        enriched.append(td)
+    return jsonify(enriched)
 
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-PDF_FILENAME = 'uploaded.pdf'
+PDF_FILENAME = 'uploaded.pdf'  # legacy single-PDF fallback
 
-TASKS_FILE = os.path.join(BASE_DIR, 'tasks.json')
+TASKS_FILE = None  # legacy removed
 tasks = []
 next_task_id = 1
 
 # --- Delete Task ---
 @app.route('/delete_task', methods=['POST'])
 def delete_task():
-    data = request.json
-    idx = data.get('task_idx')
-    if idx is None:
-        return jsonify({'success': False, 'error': 'Missing task index'}), 400
+    data = request.json or {}
+    task_id = data.get('task_id')
+    idx = data.get('task_idx')  # legacy support
     try:
-        idx = int(idx)
-        if idx < 0 or idx >= len(tasks):
-            return jsonify({'success': False, 'error': 'Invalid task index'}), 400
-        # Remove attachments from disk
-        for fname in tasks[idx].get('attachments', []):
-            fpath = os.path.join(UPLOAD_FOLDER, fname)
-            if os.path.exists(fpath):
-                os.remove(fpath)
-                 # --- Calendar View Route ---
-        tasks.pop(idx)
-        save_tasks()
-        return jsonify({'success': True})
+        if task_id is not None:
+            task_id = int(task_id)
+            with app.app_context():
+                t = ItemDB.query.get(task_id)
+                if not t:
+                    return jsonify({'success': False, 'error': 'Task not found'}), 404
+                # remove attachments from disk
+                if t.attachments:
+                    for fname in t.attachments.split(','):
+                        fpath = os.path.join(UPLOAD_FOLDER, fname)
+                        if os.path.exists(fpath):
+                            os.remove(fpath)
+                db.session.delete(t)
+                db.session.commit()
+            # refresh in-memory cache
+            load_tasks()
+            return jsonify({'success': True})
+        elif idx is not None:
+            idx = int(idx)
+            if idx < 0 or idx >= len(tasks):
+                return jsonify({'success': False, 'error': 'Invalid task index'}), 400
+            for fname in tasks[idx].get('attachments', []):
+                fpath = os.path.join(UPLOAD_FOLDER, fname)
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+            tasks.pop(idx)
+            save_tasks()
+            return jsonify({'success': True, 'legacy': True})
+        else:
+            return jsonify({'success': False, 'error': 'Missing task identifier'}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -785,80 +793,100 @@ def delete_task():
 # --- Persistent Storage Helpers ---
 def load_tasks():
     global tasks, next_task_id
-    if os.path.exists(TASKS_FILE):
-        try:
-            with open(TASKS_FILE, 'r', encoding='utf-8') as f:
-                portalocker.lock(f, portalocker.LOCK_SH)
-                try:
-                    data = json.load(f)
-                finally:
-                    portalocker.unlock(f)
-                if isinstance(data, list):
-                    tasks.clear()
-                    max_id = 0
-                    for idx, t in enumerate(data):
-                        for k, default in [
-                            ('name', ''),
-                            ('responsible', ''),
-                            ('start', ''),
-                            ('duration', ''),
-                            ('depends_on', ''),
-                            ('resources', ''),
-                            ('notes', ''),
-                            ('pdf_page', ''),
-                            ('parent', None),
-                            ('status', 'Not Started'),
-                            ('percent_complete', '0'),
-                            ('milestone', ''),
-                            ('attachments', []),
-                            ('document_links', []),
-                            ('external_task', False),
-                            ('external_milestone', False),
-                        ]:
-                            if k not in t:
-                                t[k] = default
-                        # Assign unique id if missing
-                        if 'id' not in t:
-                            t['id'] = idx + 1
-                        max_id = max(max_id, t['id'])
-                        # Coerce attachments and document_links to lists if needed
-                        if not isinstance(t.get('attachments', []), list):
-                            if isinstance(t['attachments'], str) and t['attachments'].strip() == '':
-                                t['attachments'] = []
-                            elif isinstance(t['attachments'], str):
-                                t['attachments'] = [t['attachments']]
-                            else:
-                                t['attachments'] = list(t['attachments']) if t['attachments'] else []
-                        if not isinstance(t.get('document_links', []), list):
-                            if isinstance(t['document_links'], str) and t['document_links'].strip() == '':
-                                t['document_links'] = []
-                            elif isinstance(t['document_links'], str):
-                                t['document_links'] = [t['document_links']]
-                            else:
-                                t['document_links'] = list(t['document_links']) if t['document_links'] else []
-                    # Update parent field to use id, not name
-                    name_to_id = {t['name']: t['id'] for t in data}
-                    for t in data:
-                        if t.get('parent') and t['parent'] in name_to_id:
-                            t['parent'] = name_to_id[t['parent']]
-                    tasks.extend(data)
-                    next_task_id = max_id + 1
-        except Exception:
-            pass
+    try:
+        with app.app_context():
+            db_tasks = ItemDB.query.order_by(ItemDB.id.asc()).all()
+            tasks.clear()
+            max_id = 0
+            for t in db_tasks:
+                task_dict = {
+                    'id': t.id,
+                    'user_id': t.user_id,
+                    'name': t.name,
+                    'phase': t.phase,
+                    'start': t.start or '',
+                    'duration': t.duration or '',
+                    'responsible': t.responsible or '',
+                    'status': t.status or 'Not Started',
+                    'percent_complete': t.percent_complete or '0',
+                    'milestone': t.milestone or '',
+                    'parent': t.parent,
+                    'depends_on': t.depends_on or '',
+                    'resources': t.resources or '',
+                    'notes': t.notes or '',
+                    'pdf_page': t.pdf_page or '',
+                    'pdf_file': getattr(t, 'pdf_file', '') or '',
+                    'external_item': getattr(t, 'external_item', False),
+                    'external_task': getattr(t, 'external_item', False),  # legacy alias
+                    'external_milestone': t.external_milestone,
+                    'document_links': [d for d in (t.document_links.split(',') if t.document_links else []) if d],
+                    'attachments': [a for a in (t.attachments.split(',') if t.attachments else []) if a],
+                    'shared_with': [s for s in (t.shared_with.split(',') if t.shared_with else []) if s],
+                }
+                max_id = max(max_id, t.id)
+                tasks.append(task_dict)
+            next_task_id = max_id + 1
+    except Exception as e:
+        print('[ERROR] load_tasks DB:', e)
 
 def save_tasks():
     try:
-        print(f"[DEBUG] save_tasks() called. Saving {len(tasks)} tasks to {TASKS_FILE}")
-        lock_path = TASKS_FILE + '.lock'
-        with open(lock_path, 'w') as lock_f:
-            portalocker.lock(lock_f, portalocker.LOCK_EX)
-            try:
-                _atomic_write_json(TASKS_FILE, tasks)
-            finally:
-                portalocker.unlock(lock_f)
-        print(f"[DEBUG] save_tasks() wrote file successfully.")
+        with app.app_context():
+            existing = {t.id: t for t in ItemDB.query.all()}
+            for t in tasks:
+                rec = existing.get(t['id'])
+                doc_links = ','.join(t.get('document_links', []))
+                attach = ','.join(t.get('attachments', []))
+                shared = ','.join(t.get('shared_with', []))
+                if rec:
+                    rec.user_id = t.get('user_id')
+                    rec.name = t.get('name')
+                    rec.phase = t.get('phase')
+                    rec.start = t.get('start')
+                    rec.duration = t.get('duration')
+                    rec.responsible = t.get('responsible')
+                    rec.status = t.get('status')
+                    rec.percent_complete = t.get('percent_complete')
+                    rec.milestone = t.get('milestone')
+                    rec.parent = t.get('parent')
+                    rec.depends_on = t.get('depends_on')
+                    rec.resources = t.get('resources')
+                    rec.notes = t.get('notes')
+                    rec.pdf_page = t.get('pdf_page')
+                    if 'pdf_file' in t:
+                        rec.pdf_file = t.get('pdf_file')
+                    rec.external_item = t.get('external_item', t.get('external_task', False))
+                    rec.external_milestone = t.get('external_milestone', False)
+                    rec.document_links = doc_links
+                    rec.attachments = attach
+                    rec.shared_with = shared
+                else:
+                    db.session.add(ItemDB(
+                        id=t['id'],
+                        user_id=t.get('user_id'),
+                        name=t.get('name'),
+                        phase=t.get('phase'),
+                        start=t.get('start'),
+                        duration=t.get('duration'),
+                        responsible=t.get('responsible'),
+                        status=t.get('status'),
+                        percent_complete=t.get('percent_complete'),
+                        milestone=t.get('milestone'),
+                        parent=t.get('parent'),
+                        depends_on=t.get('depends_on'),
+                        resources=t.get('resources'),
+                        notes=t.get('notes'),
+                        pdf_page=t.get('pdf_page'),
+                        pdf_file=t.get('pdf_file'),
+                        external_item=t.get('external_item', t.get('external_task', False)),
+                        external_milestone=t.get('external_milestone', False),
+                        document_links=doc_links,
+                        attachments=attach,
+                        shared_with=shared,
+                    ))
+            db.session.commit()
     except Exception as e:
-        print(f"[DEBUG] save_tasks() failed: {e}")
+        print('[ERROR] save_tasks DB:', e)
 
 # --- Delete Attachment from Task ---
 @app.route('/delete_attachment', methods=['POST'])
@@ -924,77 +952,10 @@ def compute_critical_path(tasks):
     adj = {t['name']: [] for t in tasks}
     rev_adj = {t['name']: [] for t in tasks}
     for t in tasks:
-        dep = t.get('depends_on')
-        if dep and dep in adj:
-            adj[dep].append(t['name'])
-            rev_adj[t['name']].append(dep)
-    # Topological sort
-    visited = set()
-    order = []
-    def dfs(u):
-        visited.add(u)
-        for v in adj[u]:
-            if v not in visited:
-                dfs(v)
-        order.append(u)
-    for t in tasks:
-        if t['name'] not in visited:
-            dfs(t['name'])
-    order = order[::-1]
-    # Forward pass: calculate earliest start/finish
-    es = {name: 0 for name in task_dict}
-    ef = {name: 0 for name in task_dict}
-    for name in order:
-        dur = int(task_dict[name].get('duration', 1) or 1)
-        es[name] = max([ef[dep] for dep in rev_adj[name]] or [0])
-        ef[name] = es[name] + dur
-    # Backward pass: calculate latest start/finish
-    max_ef = max(ef.values() or [0])
-    lf = {name: max_ef for name in task_dict}
-    ls = {name: max_ef for name in task_dict}
-    for name in reversed(order):
-        dur = int(task_dict[name].get('duration', 1) or 1)
-        if adj[name]:
-            lf[name] = min([ls[succ] for succ in adj[name]])
-        ls[name] = lf[name] - dur
-    # Critical path: tasks where es==ls
-    critical = set(name for name in task_dict if es[name] == ls[name])
-    return critical
-
-def parse_tasks_for_gantt(tasks):
-    # Flatten tasks into a sorted list with indentation for sub-tasks
-    # Group by phase, then by task/sub-task
-    def collect(task, all_tasks, depth):
-        try:
-            start = datetime.strptime(task['start'], '%Y-%m-%d')
-            duration = int(task.get('duration', 1) or 1)
-        except Exception:
-            return
-        is_milestone = bool(task.get('milestone')) or bool(task.get('external_milestone'))
-        all_tasks.append({
-            'name': ('    ' * depth) + task['name'],
-            'start': start,
-            'duration': duration,
-            'is_milestone': is_milestone,
-            'is_phase': False,
-            'external_task': bool(task.get('external_task')),
-            'external_milestone': bool(task.get('external_milestone'))
-        })
-        # Find sub-tasks (children)
-        children = [t for t in tasks if (t.get('parent') or '') == task['name'] and t.get('phase', '') == task.get('phase', '')]
-        for child in children:
-            collect(child, all_tasks, depth+1)
-
-    # Group tasks by phase
-    phase_map = {}
-    for t in tasks:
-        phase = t.get('phase') or 'No Phase'
-        if phase not in phase_map:
-            phase_map[phase] = []
-        phase_map[phase].append(t)
-
-    all_tasks = []
-    for phase, phase_tasks in phase_map.items():
+        @app.route('/migrate_legacy_json')
+        @login_required
+        def migrate_legacy_json():
+            return jsonify({'success': False, 'error': 'Legacy JSON migration disabled; database is authoritative.'}), 410
         # Add phase as a top-level row (no date, no duration)
         all_tasks.append({
             'name': phase,
@@ -1065,7 +1026,7 @@ def gantt_data():
             'percent_complete': pc_val,
             'status': t.get('status'),
             'milestone': bool(t.get('milestone')) or bool(t.get('external_milestone')),
-            'external_task': bool(t.get('external_task')),
+            'external_task': bool(t.get('external_item') or t.get('external_task')),
             'external_milestone': bool(t.get('external_milestone')),
             'depends_on': t.get('depends_on'),
             'parent': t.get('parent'),
@@ -1085,7 +1046,7 @@ def gantt_chart():
         hide_external = flask_request.args.get('hide_external', '0') in ('1', 'true', 'True')
         base_tasks = tasks
         if hide_external:
-            base_tasks = [t for t in tasks if not t.get('external_task') and not t.get('external_milestone')]
+            base_tasks = [t for t in tasks if not (t.get('external_item') or t.get('external_task')) and not t.get('external_milestone')]
         parsed = parse_tasks_for_gantt(base_tasks)
         critical = compute_critical_path(tasks)
         fig, ax = plt.subplots(figsize=(24, 12))
@@ -1124,7 +1085,7 @@ def gantt_chart():
                     dur = int(t['duration']) if not isinstance(t['duration'], int) else t['duration']
                     done_dur = dur * percent / 100.0
                     # External tasks always red full bar
-                    if t.get('external_task'):
+                    if t.get('external_item') or t.get('external_task'):
                         ax.barh(i, dur, left=starts[i], height=0.45, align='center', color='red', edgecolor='black', hatch='///')
                     else:
                         # Draw completed (primary color) part
@@ -1290,7 +1251,12 @@ def index():
     load_tasks()
     load_phases()
     load_settings()
-    pdf_uploaded = os.path.exists(os.path.join(UPLOAD_FOLDER, PDF_FILENAME))
+    # multi-PDF: list all uploaded pdfs
+    try:
+        pdf_files = [f for f in os.listdir(UPLOAD_FOLDER) if f.lower().endswith('.pdf')]
+    except Exception:
+        pdf_files = []
+    pdf_uploaded = len(pdf_files) > 0
     parent_options = [('', 'None')] + [(t['name'], t['name']) for t in tasks]
     if request.method == 'POST':
         print("[DEBUG] POST request received at index route.")
@@ -1300,7 +1266,8 @@ def index():
             print("[DEBUG] Entered PDF upload branch.")
             pdf = request.files['pdf']
             if pdf and pdf.filename.lower().endswith('.pdf'):
-                pdf.save(os.path.join(UPLOAD_FOLDER, PDF_FILENAME))
+                safe_name = pdf.filename.replace('..', '').replace('/', '_').replace('\\', '_')
+                pdf.save(os.path.join(UPLOAD_FOLDER, safe_name))
             return redirect(url_for('index'))
         if 'project_upload' in request.files:
             print("[DEBUG] Entered project_upload branch.")
@@ -1363,22 +1330,23 @@ def index():
                             flash('Invalid project file.')
                     return redirect(url_for('index'))
                 # Add new task from form
-        print("[DEBUG] Entered new task creation branch.")
+                print("[DEBUG] Entered new task creation branch.")
         # Unified task form (matching tasks tab)
-        name = request.form.get('name', '').strip()
-        phase = request.form.get('phase', '').strip()
-        share_with = request.form.get('share_with', '').strip()
-        responsible = request.form.get('responsible', '').strip()
-        start = request.form.get('start', '').strip()
-        duration = request.form.get('duration', '').strip()
-        percent_complete = request.form.get('percent_complete', '0').strip()
-        status = request.form.get('status', '').strip() or 'Not Started'
-        depends_on = request.form.get('depends_on', '').strip()
-        resources = request.form.get('resources', '').strip()
-        notes = request.form.get('notes', '').strip()
-        pdf_page = request.form.get('pdf_page', '').strip()
-        parent = request.form.get('parent', '').strip()
-        milestone = request.form.get('milestone', '').strip()
+                name = request.form.get('name', '').strip()
+                phase = request.form.get('phase', '').strip()
+                share_with = request.form.get('share_with', '').strip()
+                responsible = request.form.get('responsible', '').strip()
+                start = request.form.get('start', '').strip()
+                duration = request.form.get('duration', '').strip()
+                percent_complete = request.form.get('percent_complete', '0').strip()
+                status = request.form.get('status', '').strip() or 'Not Started'
+                depends_on = request.form.get('depends_on', '').strip()
+                resources = request.form.get('resources', '').strip()
+                notes = request.form.get('notes', '').strip()
+                pdf_page = request.form.get('pdf_page', '').strip()
+                pdf_file = request.form.get('pdf_file', '').strip()
+                parent = request.form.get('parent', '').strip()
+                milestone = request.form.get('milestone', '').strip()
         document_links_raw = request.form.get('document_links') or request.form.get('document_link', '')
         document_links = document_links_raw.strip()
         links_list = [l.strip() for l in document_links.split(',') if l.strip()]
@@ -1456,6 +1424,7 @@ def index():
                     'resources': resources,
                     'notes': notes,
                     'pdf_page': pdf_page,
+                    'pdf_file': pdf_file,
                     'status': status,
                     'percent_complete': percent_complete,
                     'parent': parent,
@@ -1485,6 +1454,7 @@ def index():
                     'resources': resources,
                     'notes': notes,
                     'pdf_page': pdf_page,
+                    'pdf_file': pdf_file,
                     'status': status,
                     'percent_complete': percent_complete,
                     'parent': parent,
@@ -1509,7 +1479,7 @@ def index():
         return redirect(url_for('index'))
     # Global phases: show all phases (no longer filtered per-user)
     can_edit_flag = can_edit()
-    return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options, phases=phases, can_edit_flag=can_edit_flag)
+    return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options, phases=phases, can_edit_flag=can_edit_flag, pdf_files=pdf_files)
     # ...existing code...
 # --- Update Task Status (AJAX for Kanban drag-and-drop) ---
 @app.route('/update_task_status', methods=['POST'])
@@ -1522,29 +1492,24 @@ def update_task_status():
         print('[DEBUG] Invalid task id:', data.get('id'))
         return jsonify({'success': False, 'error': 'Invalid task id'})
     new_status = data.get('status')
-    found = False
-    for t in tasks:
-        print(f"[DEBUG] Checking task id {t['id']} against {task_id}")
-        if t['id'] == task_id:
-            # Authorization: admin always; otherwise must own & can_edit
-            if not getattr(current_user, 'is_authenticated', False):
-                return jsonify({'success': False, 'error': 'Auth required'}), 401
-            if not getattr(current_user, 'is_admin', False):
-                if t.get('user_id') != current_user.get_id() or not can_edit():
-                    return jsonify({'success': False, 'error': 'Not authorized'}), 403
-            t['status'] = new_status
-            # Automatically update percent_complete for certain statuses
-            if new_status == 'Completed':
-                t['percent_complete'] = 100
-            elif new_status == 'Not Started':
-                t['percent_complete'] = 0
-            save_tasks()
-            print(f"[DEBUG] Updated task {task_id} to status {new_status} and percent_complete {t.get('percent_complete')}")
-            found = True
-            return jsonify({'success': True})
-    if not found:
-        print(f"[DEBUG] Task id {task_id} not found in tasks: {[t['id'] for t in tasks]}")
-    return jsonify({'success': False, 'error': 'Task not found'})
+    with app.app_context():
+        rec = ItemDB.query.get(task_id)
+        if not rec:
+            print(f"[DEBUG] Task id {task_id} not found in DB")
+            return jsonify({'success': False, 'error': 'Task not found'})
+        if not getattr(current_user, 'is_authenticated', False):
+            return jsonify({'success': False, 'error': 'Auth required'}), 401
+        if not getattr(current_user, 'is_admin', False):
+            if rec.user_id != current_user.get_id() or not can_edit():
+                return jsonify({'success': False, 'error': 'Not authorized'}), 403
+        rec.status = new_status
+        if new_status == 'Completed':
+            rec.percent_complete = 100
+        elif new_status == 'Not Started':
+            rec.percent_complete = 0
+        db.session.commit()
+    load_tasks()
+    return jsonify({'success': True})
 
 # --- Update Task Fields (start, duration, percent_complete) for interactive Gantt ---
 @app.route('/update_task_fields', methods=['POST'])
@@ -1561,66 +1526,65 @@ def update_task_fields():
     start = data.get('start')  # YYYY-MM-DD
     duration = data.get('duration')
     percent = data.get('percent_complete')
-    updated = False
-    for t in tasks:
-        if t.get('id') == task_id:
-            # Ownership check: user must own or be admin
-            owner_id = t.get('user_id') or ''
-            user_rec = next((u for u in users if str(u['id']) == str(current_user.get_id())), None)
-            is_admin = user_rec.get('is_admin', False) if user_rec else False
-            if not is_admin:
-                if owner_id and owner_id != current_user.get_id():
-                    return jsonify({'success': False, 'error': 'Not authorized'}), 403
-                if not can_edit():
-                    return jsonify({'success': False, 'error': 'Editing restricted'}), 403
-            if start:
-                # Basic validation format
+    with app.app_context():
+        rec = ItemDB.query.get(task_id)
+        if not rec:
+            return jsonify({'success': False, 'error': 'Task not found'}), 404
+        # Authorization: admin or owner + can_edit
+        owner_id = rec.user_id or ''
+        user_rec = next((u for u in users if str(u['id']) == str(current_user.get_id())), None)
+        is_admin = user_rec.get('is_admin', False) if user_rec else False
+        if not is_admin:
+            if owner_id and owner_id != current_user.get_id():
+                return jsonify({'success': False, 'error': 'Not authorized'}), 403
+            if not can_edit():
+                return jsonify({'success': False, 'error': 'Editing restricted'}), 403
+        # Apply updates
+        if start:
+            try:
+                datetime.strptime(start, '%Y-%m-%d')
+                rec.start = start
+            except Exception:
+                return jsonify({'success': False, 'error': 'Invalid start date'}), 400
+        if duration is not None:
+            try:
+                d = int(duration)
+                if d < 0:
+                    return jsonify({'success': False, 'error': 'Duration cannot be negative'}), 400
+                rec.duration = d
+            except Exception:
+                return jsonify({'success': False, 'error': 'Invalid duration'}), 400
+        if percent is not None:
+            try:
+                p = float(percent)
+                p = max(0, min(100, p))
+                rec.percent_complete = p
+                if p >= 100:
+                    rec.status = 'Completed'
+                elif p > 0 and (rec.status == 'Not Started'):
+                    rec.status = 'In Progress'
+            except Exception:
+                return jsonify({'success': False, 'error': 'Invalid percent_complete'}), 400
+        # Dependency constraint enforcement
+        if rec.depends_on:
+            dep = TaskDB.query.filter_by(name=rec.depends_on).first()
+            if dep and dep.start:
                 try:
-                    datetime.strptime(start, '%Y-%m-%d')
-                    t['start'] = start
+                    dep_start_dt = datetime.strptime(dep.start, '%Y-%m-%d')
+                    dep_dur = int(dep.duration or 0)
+                    dep_end_dt = dep_start_dt + timedelta(days=dep_dur)
+                    if rec.start:
+                        this_start_dt = datetime.strptime(rec.start, '%Y-%m-%d')
+                        if this_start_dt < dep_end_dt:
+                            return jsonify({'success': False, 'error': 'Dependency violation', 'dependency_end': dep_end_dt.strftime('%Y-%m-%d')}), 409
                 except Exception:
-                    return jsonify({'success': False, 'error': 'Invalid start date'}), 400
-            if duration is not None:
-                try:
-                    d = int(duration)
-                    if d < 0:
-                        return jsonify({'success': False, 'error': 'Duration cannot be negative'}), 400
-                    t['duration'] = d
-                except Exception:
-                    return jsonify({'success': False, 'error': 'Invalid duration'}), 400
-            if percent is not None:
-                try:
-                    p = float(percent)
-                    p = max(0, min(100, p))
-                    t['percent_complete'] = p
-                    # Auto status update
-                    if p >= 100:
-                        t['status'] = 'Completed'
-                    elif p > 0 and t.get('status') == 'Not Started':
-                        t['status'] = 'In Progress'
-                except Exception:
-                    return jsonify({'success': False, 'error': 'Invalid percent_complete'}), 400
-            # Dependency constraint enforcement: BLOCK (reject) if start before dependency end
-            dep_name = t.get('depends_on')
-            if dep_name:
-                dep_task = next((dt for dt in tasks if dt.get('name') == dep_name), None)
-                if dep_task and dep_task.get('start'):
-                    try:
-                        dep_start_dt = datetime.strptime(dep_task['start'], '%Y-%m-%d')
-                        dep_dur = int(dep_task.get('duration') or 0)
-                        dep_end_dt = dep_start_dt + timedelta(days=dep_dur)
-                        if t.get('start'):
-                            this_start_dt = datetime.strptime(t['start'], '%Y-%m-%d')
-                            if this_start_dt < dep_end_dt:
-                                return jsonify({'success': False, 'error': 'Dependency violation', 'dependency_end': dep_end_dt.strftime('%Y-%m-%d')}), 409
-                    except Exception:
-                        pass
-            updated = True
-            save_tasks()
-            break
-    if not updated:
-        return jsonify({'success': False, 'error': 'Task not found'}), 404
-    return jsonify({'success': True, 'start': t.get('start'), 'duration': t.get('duration'), 'percent_complete': t.get('percent_complete')})
+                    pass
+        db.session.commit()
+        # Refresh in-memory cache
+        load_tasks()
+        # Find updated task dict
+        updated = next((t for t in tasks if t['id'] == rec.id), None)
+        return jsonify({'success': True, 'start': updated.get('start'), 'duration': updated.get('duration'), 'percent_complete': updated.get('percent_complete')})
 
 @app.route('/download_project')
 def download_project():
@@ -1632,6 +1596,12 @@ def download_project():
 @app.route('/pdf')
 def serve_pdf():
     return send_from_directory(UPLOAD_FOLDER, PDF_FILENAME)
+
+# Serve arbitrary uploaded PDF (simple sanitization)
+@app.route('/pdf/<path:filename>')
+def serve_named_pdf(filename):
+    safe = filename.replace('..','').replace('\\','_').replace('/', '_')
+    return send_from_directory(UPLOAD_FOLDER, safe)
 
 if __name__ == '__main__':
     load_tasks()

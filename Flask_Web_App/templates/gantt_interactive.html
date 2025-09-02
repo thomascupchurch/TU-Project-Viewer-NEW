@@ -102,7 +102,7 @@ function filterTasks() {
   const showExt = document.getElementById('toggleExternal').checked;
   const showMilestones = document.getElementById('toggleMilestones').checked;
   visibleTasks = allTasks.filter(t => {
-    if (!showExt && (t.external_task || t.external_milestone)) return false;
+  if (!showExt && (t.external_item || t.external_task || t.external_milestone)) return false;
     if (!showMilestones && t.milestone) return false;
     return true;
   });
@@ -144,7 +144,7 @@ function render() {
   leftHeader.style.display='flex';
   leftHeader.style.alignItems='center';
   leftHeader.style.padding='0 6px';
-  leftHeader.innerHTML='<strong>Task / Phase</strong>';
+  leftHeader.innerHTML='<strong>Item / Phase</strong>';
   header.appendChild(leftHeader);
   // Date scale
   const scale = document.createElement('div');
@@ -221,11 +221,11 @@ function render() {
         bar.style.top= '6px';
         bar.style.height= (rowHeight-12)+'px';
         bar.style.width= w+'px';
-        bar.style.background= t.external_task ? 'red' : 'var(--secondary-color)';
+  bar.style.background= (t.external_item || t.external_task) ? 'red' : 'var(--secondary-color)';
         bar.style.border='1px solid #333';
         bar.style.borderRadius='4px';
         bar.style.cursor='move';
-        if (t.external_task) {
+  if (t.external_item || t.external_task) {
           bar.style.backgroundImage= 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0 8px, rgba(255,255,255,0) 8px 16px)';
         } else {
           // show completed portion

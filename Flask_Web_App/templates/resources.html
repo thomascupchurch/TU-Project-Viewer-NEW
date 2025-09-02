@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Resources</h2>
+<ul class="nav nav-tabs" id="resourceTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="contacts-tab" data-bs-toggle="tab" data-bs-target="#contacts" type="button" role="tab">Contacts</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="assets-tab" data-bs-toggle="tab" data-bs-target="#assets" type="button" role="tab">Assets</button>
+  </li>
+</ul>
+<div class="tab-content border border-top-0 p-3" id="resourceTabsContent">
+  <div class="tab-pane fade show active" id="contacts" role="tabpanel">
+    <form method="POST" action="{{ url_for('resources_page') }}" class="row g-2 mb-3">
+      <input type="hidden" name="form_type" value="contact">
+      <div class="col-md-2"><input name="name" class="form-control" placeholder="Name" required></div>
+      <div class="col-md-2"><input name="title" class="form-control" placeholder="Title"></div>
+      <div class="col-md-2"><input name="company" class="form-control" placeholder="Company"></div>
+      <div class="col-md-2"><input name="email" class="form-control" placeholder="Email"></div>
+      <div class="col-md-2"><input name="phone" class="form-control" placeholder="Phone"></div>
+      <div class="col-md-2"><input name="address" class="form-control" placeholder="Address"></div>
+      <div class="col-12"><input name="notes" class="form-control" placeholder="Notes"></div>
+      <div class="col-12 text-end"><button class="btn btn-sm btn-primary">Add Contact</button></div>
+    </form>
+    <table class="table table-sm table-hover">
+      <thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Address</th><th>Notes</th><th></th></tr></thead>
+      <tbody>
+      {% for c in contacts %}
+        <tr>
+          <td>{{ c.name }}</td>
+          <td>{{ c.title }}</td>
+            <td>{{ c.company }}</td>
+          <td>{{ c.email }}</td>
+          <td>{{ c.phone }}</td>
+          <td>{{ c.address }}</td>
+          <td>{{ c.notes }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('delete_contact') }}" class="d-inline">
+              <input type="hidden" name="contact_id" value="{{ c.id }}">
+              <button class="btn btn-sm btn-danger">Del</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="tab-pane fade" id="assets" role="tabpanel">
+    <form method="POST" action="{{ url_for('resources_page') }}" enctype="multipart/form-data" class="row g-2 mb-3">
+      <input type="hidden" name="form_type" value="asset">
+      <div class="col-md-4"><input type="file" name="asset_file" class="form-control" required></div>
+      <div class="col-md-4"><input name="description" class="form-control" placeholder="Description (optional)"></div>
+      <div class="col-md-4 text-end"><button class="btn btn-sm btn-primary">Upload Asset</button></div>
+    </form>
+    <table class="table table-sm table-hover">
+      <thead><tr><th>Filename</th><th>Description</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
+      <tbody>
+      {% for a in assets %}
+        <tr>
+          <td><a href="{{ url_for('download_asset', asset_id=a.id) }}" target="_blank">{{ a.filename }}</a></td>
+          <td>{{ a.description }}</td>
+          <td>{{ a.size_human }}</td>
+          <td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('delete_asset') }}" class="d-inline">
+              <input type="hidden" name="asset_id" value="{{ a.id }}">
+              <button class="btn btn-sm btn-danger">Del</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

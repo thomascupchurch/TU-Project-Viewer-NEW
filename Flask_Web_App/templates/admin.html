@@ -22,7 +22,7 @@
     </table>
     <h4 class="mt-4">All Tasks</h4>
     <table class="table table-bordered">
-        <thead><tr><th>ID</th><th>Name</th><th>User</th><th>Status</th><th>External Task</th><th>External Milestone</th></tr></thead>
+    <thead><tr><th>ID</th><th>Name</th><th>User</th><th>Status</th><th>External Item</th><th>External Milestone</th></tr></thead>
         <tbody>
         {% for task in tasks %}
         <tr>
@@ -30,7 +30,7 @@
             <td>{{ task.name }}</td>
             <td>{{ task.user_id }}</td>
             <td>{{ task.status }}</td>
-            <td>{% if task.external_task %}<span class="badge bg-danger">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</td>
+            <td>{% if task.external_item or task.external_task %}<span class="badge bg-danger">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</td>
             <td>{% if task.external_milestone %}<span class="badge bg-danger">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</td>
         </tr>
         {% endfor %}
