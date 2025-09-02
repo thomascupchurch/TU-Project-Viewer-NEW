@@ -1162,6 +1162,7 @@ def download_csv():
     return output
 
 @app.route('/', methods=['GET', 'POST'])
+@login_required
 def index():
     global tasks
     load_tasks()
