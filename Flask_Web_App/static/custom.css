@@ -8,9 +8,15 @@
 }
 /* Custom styles for TU Project Viewer */
 .container-fluid.my-4.tu-main-container {
-    height: 100vh;
+    /* Allow content to define height; enable scrolling */
+    min-height: 100vh;
     max-width: 100vw;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: visible;
+}
+
+html, body {
+    height: auto;
 }
 
 body {
