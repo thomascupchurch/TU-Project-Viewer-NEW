@@ -1385,7 +1385,10 @@ def index():
             print(f"[DEBUG] Task list before save: {tasks}")
             save_tasks()
         return redirect(url_for('index'))
-    return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options)
+    # Provide phases to dashboard so existing phases populate the phase dropdown
+    # Mirror filtering logic used elsewhere: show only phases owned by current user
+    user_phases = [p for p in phases if str(p.get('user_id')) == str(current_user.get_id())]
+    return render_template('index.html', tasks=tasks, pdf_uploaded=pdf_uploaded, parent_options=parent_options, phases=user_phases)
     # ...existing code...
 # --- Update Task Status (AJAX for Kanban drag-and-drop) ---
 @app.route('/update_task_status', methods=['POST'])
