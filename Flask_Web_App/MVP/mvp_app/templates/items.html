@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Your Items</h2>
+<form method="post" action="{{ url_for('items.create_item') }}" class="row g-2 mb-3">
+  <div class="col-auto"><input name="title" class="form-control" placeholder="New item title" required /></div>
+  <div class="col-auto"><button class="btn btn-primary">Add</button></div>
+</form>
+<table class="table table-striped">
+  <thead><tr><th>Name</th><th>Created</th><th style="width:220px;">Actions</th></tr></thead>
+  <tbody>
+    {% for i in items %}
+    <tr>
+      <td>{{ i.name }}</td>
+      <td>{{ i.created_at.strftime('%Y-%m-%d %H:%M') if i.created_at else '' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('items.update_item', item_id=i.id) }}" class="d-inline">
+          <input name="title" value="{{ i.name }}" class="form-control form-control-sm d-inline w-auto" />
+          <button class="btn btn-sm btn-secondary">Update</button>
+        </form>
+        <form method="post" action="{{ url_for('items.delete_item', item_id=i.id) }}" class="d-inline ms-1" onsubmit="return confirm('Delete?');">
+          <button class="btn btn-sm btn-danger">X</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="text-muted">No items yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
